@@ -1,0 +1,470 @@
+<!DOCTYPE html>  
+<html lang="en">  
+<head>  
+  <meta charset="UTF-8">  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">  
+  <title>VIP 3 Patti Room</title>  
+  <script src="/socket.io/socket.io.js"></script>  
+  <style>  
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: sans-serif; }  
+    body { background: #070a0f; color: white; height: 100vh; overflow: hidden; }  
+    .poker-room { position: relative; width: 100vw; height: 100vh; background: radial-gradient(circle, #0f172a 0%, #020617 100%); display: flex; justify-content: center; align-items: center; }  
+    .poker-table { position: relative; width: 92vw; height: 52vh; max-width: 800px; max-height: 420px; background: radial-gradient(ellipse at center, #166534 0%, #14532d 60%, #052e16 100%); border: 12px solid #b45309; outline: 3px solid #f59e0b; border-radius: 200px; box-shadow: 0 0 50px rgba(0,0,0,0.9); }  
+    .pot-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(15, 23, 42, 0.95); border: 2px solid #fbbf24; padding: 8px 18px; border-radius: 30px; font-weight: bold; color: #fbbf24; font-size: 16px; text-align: center; z-index: 10; }  
+    .status-msg { font-size: 11px; color: #94a3b8; }  
+    .timer-badge { font-size: 11px; color: #f87171; font-weight: bold; }  
+    .hand-banner { position: absolute; top: -35px; left: 50%; transform: translateX(-50%); background: #f59e0b; color: #000; padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: bold; border: 1px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.5); white-space: nowrap; display: none; }
+    .seat { position: absolute; transform: translate(-50%, -50%); text-align: center; width: 85px; transition: transform 0.3s ease; }  
+    .avatar { position: relative; width: 45px; height: 45px; border-radius: 50%; border: 3px solid #f59e0b; background: #1e293b; margin: 0 auto; overflow: hidden; }  
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }  
+    .seat.active-turn .avatar { border-color: #22c55e; box-shadow: 0 0 15px #22c55e; transform: scale(1.08); }  
+    .seat.winner .avatar { border-color: #eab308; box-shadow: 0 0 25px #eab308; animation: pulse 1s infinite alternate; }  
+    .dealer-badge { position: absolute; top: -5px; right: -5px; background: #fbbf24; color: #000; font-size: 10px; font-weight: bold; width: 16px; height: 16px; border-radius: 50%; display: flex; justify-content: center; align-items: center; border: 1px solid #000; z-index: 5; }  
+    .seat-label { background: rgba(15, 23, 42, 0.95); font-size: 9px; border-radius: 6px; padding: 2px 4px; border: 1px solid #334155; font-weight: 600; margin-top: -4px; }  
+    .card-deck { display: flex; justify-content: center; gap: 2px; margin-top: 3px; }  
+    .card-img { width: 24px; height: 35px; border-radius: 3px; background: #fff; border: 1px solid #000; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }  
+    .big-card-svg { width: 95px; height: 140px; border-radius: 10px; box-shadow: 0 8px 25px rgba(0,0,0,0.9); transform: scale(1.1); }
+    @keyframes dealCard {  
+      0% { opacity: 0; transform: scale(0.2) translateY(-100px); }  
+      100% { opacity: 1; transform: scale(1) translateY(0); }  
+    }  
+    .animate-deal-1 { animation: dealCard 0.4s ease-out 0.1s backwards; }  
+    .animate-deal-2 { animation: dealCard 0.4s ease-out 0.3s backwards; }  
+    .animate-deal-3 { animation: dealCard 0.4s ease-out 0.5s backwards; }  
+    @keyframes pulse {  
+      0% { transform: scale(1); }  
+      100% { transform: scale(1.15); }  
+    }  
+    .controls-dock { position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; background: rgba(15, 23, 42, 0.98); padding: 10px 14px; border-radius: 40px; border: 1px solid #fbbf24; z-index: 150; box-shadow: 0 4px 20px rgba(0,0,0,0.8); }  
+    .btn-action { padding: 8px 12px; border: none; border-radius: 20px; font-weight: bold; color: white; cursor: pointer; font-size: 11px; }  
+    .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }  
+    .btn-pack { background: #dc2626; } .btn-see { background: #2563eb; } .btn-blind { background: #0284c7; } .btn-chaal { background: #16a34a; } .btn-show { background: #d97706; } .btn-sideshow { background: #8b5cf6; }
+    .top-menu { display: none; position: absolute; top: 15px; right: 15px; background: #78350f; border: 1px solid #fbbf24; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 12px; z-index: 100; }  
+    .drawer { position: fixed; top: 0; right: -320px; width: 300px; height: 100%; background: #0f172a; border-left: 2px solid #fbbf24; transition: 0.3s; z-index: 200; padding: 20px; }  
+    .drawer.open { right: 0; }  
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.92); display: flex; justify-content: center; align-items: center; z-index: 300; }  
+    .modal-box { background: #0f172a; border: 2px solid #fbbf24; padding: 20px; border-radius: 16px; text-align: center; width: 300px; }  
+    .modal-box input { width: 100%; padding: 10px; margin: 8px 0; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: white; }  
+    .tab-btn { background: #1e293b; color: #94a3b8; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; }  
+    .tab-btn.active { background: #fbbf24; color: #0f172a; font-weight: bold; }  
+    .flying-chip { position: fixed; width: 22px; height: 22px; background: #f59e0b; border: 2px dashed #fff; border-radius: 50%; box-shadow: 0 0 10px #fbbf24; z-index: 999; pointer-events: none; transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1); }
+  </style>  
+<link rel="manifest" href="/manifest.json"></head>  
+<body>  
+  <div id="loginModal" class="modal-overlay">  
+    <div class="modal-box">  
+      <h2 style="color:#fbbf24; margin-bottom:10px;">ROYAL 3 PATTI</h2>  
+      <div style="display:flex; justify-content:center; gap:8px;">  
+        <button id="playerTab" class="tab-btn active" onclick="switchLoginTab('PLAYER')">Player</button>  
+        <button id="adminTab" class="tab-btn" onclick="switchLoginTab('ADMIN')">Admin</button>  
+      </div>  
+      <div id="playerForm">  
+        <input type="text" id="pName" placeholder="Enter Your Name">  
+        <button class="btn-action btn-chaal" style="width:100%; margin-top:10px;" onclick="signPlayerIn()">JOIN GAME</button>  
+      </div>  
+      <div id="adminForm" style="display:none;">  
+        <input type="text" id="aUser" placeholder="Admin Username">  
+        <input type="password" id="aPass" placeholder="Admin Password">  
+        <button class="btn-action btn-see" style="width:100%; margin-top:10px;" onclick="signAdminIn()">ADMIN LOGIN</button>  
+      </div>  
+    </div>  
+  </div>  
+
+  <div id="sideshowModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h3 style="color:#fbbf24; margin-bottom:12px;">SIDE SHOW REQUEST</h3>
+      <p id="sideshowMsg" style="font-size:13px; color:#cbd5e1; margin-bottom:18px;"></p>
+      <div style="display:flex; justify-content:center; gap:12px;">
+        <button class="btn-action btn-chaal" style="padding:10px 20px;" onclick="respondSideshow(true)">ACCEPT</button>
+        <button class="btn-action btn-pack" style="padding:10px 20px;" onclick="respondSideshow(false)">DENY</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cardOverlay" class="modal-overlay" style="display:none; flex-direction:column; z-index: 500;">
+    <h2 style="color:#fbbf24; margin-bottom: 25px; letter-spacing:1px;">YOUR CARDS</h2>
+    <div id="bigCardsContainer" style="display:flex; gap:18px; margin-bottom:30px;"></div>
+    <div style="font-size:14px; color:#cbd5e1; background:rgba(255,255,255,0.1); padding:6px 16px; border-radius:20px;">
+      Closing in <span id="overlayCountdown" style="color:#fbbf24; font-weight:bold;">3</span>s
+    </div>
+  </div>
+
+  <div id="adminDrawer" class="drawer">  
+    <h3 style="color:#fbbf24; margin-bottom:15px;">Admin Control Panel</h3>  
+    <div id="coinControlArea"></div>  
+    <button class="btn-action btn-pack" style="width:100%; margin-top:20px;" onclick="toggleDrawer()">CLOSE</button>  
+  </div>  
+
+  <div class="poker-room">  
+    <div id="adminMenuBtn" class="top-menu" onclick="toggleDrawer()">⋮ MENU</div>  
+    <div class="poker-table" id="pokerTable">  
+      <div class="pot-container" id="potContainer">  
+        <div id="handBanner" class="hand-banner"></div>
+        <div class="status-msg" id="statusBox">Waiting...</div>  
+        ₹<span id="potVal">0</span>  
+        <div class="timer-badge" id="timerBox"></div>  
+      </div>  
+      <div id="seatsContainer"></div>  
+    </div>  
+
+    <div class="controls-dock">  
+      <button class="btn-action btn-pack" id="btnPack" onclick="handleAction('PACK')">PACK</button>  
+      <button class="btn-action btn-blind" id="btnBlind" onclick="handleAction('BLIND')">BLIND (₹10)</button>  
+      <button class="btn-action btn-see" id="btnSee" onclick="handleAction('SEE')">SEE CARDS</button>  
+      <button class="btn-action btn-sideshow" id="btnSideShow" onclick="handleAction('SIDESHOW_REQUEST')">SIDE SHOW</button>  
+      <button class="btn-action btn-chaal" id="btnChaal" onclick="handleAction('CHAAL')">CHAAL (₹20)</button>  
+      <button class="btn-action btn-show" id="btnShow" onclick="handleAction('SHOW')">SHOW (₹20)</button>  
+      <button class="btn-action btn-chaal" id="btnRejoin" style="display:none; background:#22c55e;" onclick="rejoinGame()">I'M BACK</button>
+    </div>  
+  </div>  
+
+  <script>  
+    const socket = io({ transports: ['websocket'] });  
+    let isUserAdmin = false;  
+    let myCards = [null, null, null];  
+    let isSeenLocal = false;  
+    let overlayTimeout = null;
+    let overlayInterval = null;
+    let wasMyTurn = false;
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playAudio(type) {
+      try {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+
+        if (type === 'deal') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(450, now);
+          osc.frequency.exponentialRampToValueAtTime(120, now + 0.12);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.12);
+          osc.start(now); osc.stop(now + 0.12);
+        } else if (type === 'chip') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(850, now);
+          osc.frequency.exponentialRampToValueAtTime(250, now + 0.08);
+          gain.gain.setValueAtTime(0.4, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.08);
+          osc.start(now); osc.stop(now + 0.08);
+        } else if (type === 'tick') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(900, now);
+          gain.gain.setValueAtTime(0.1, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.05);
+          osc.start(now); osc.stop(now + 0.05);
+        } else if (type === 'win') {
+          const freqs = [523.25, 659.25, 783.99, 1046.50];
+          freqs.forEach((f, i) => {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.frequency.setValueAtTime(f, now + i * 0.09);
+            g.gain.setValueAtTime(0.25, now + i * 0.09);
+            g.gain.linearRampToValueAtTime(0, now + i * 0.09 + 0.2);
+            o.start(now + i * 0.09); o.stop(now + i * 0.09 + 0.2);
+          });
+        }
+      } catch(e) {}
+    }
+
+    function spawnChipAnimation(fromElem, toElem) {
+      if (!fromElem || !toElem) return;
+      const r1 = fromElem.getBoundingClientRect();
+      const r2 = toElem.getBoundingClientRect();
+
+      const chip = document.createElement('div');
+      chip.className = 'flying-chip';
+      chip.style.left = `${r1.left + r1.width / 2 - 11}px`;
+      chip.style.top = `${r1.top + r1.height / 2 - 11}px`;
+      document.body.appendChild(chip);
+
+      setTimeout(() => {
+        chip.style.left = `${r2.left + r2.width / 2 - 11}px`;
+        chip.style.top = `${r2.top + r2.height / 2 - 11}px`;
+      }, 20);
+
+      setTimeout(() => chip.remove(), 650);
+    }
+
+    function getCardSvg(card, delayIndex) {  
+      const animClass = delayIndex ? `animate-deal-${delayIndex}` : '';  
+      if (!card) {  
+        return `<svg class="card-img ${animClass}" viewBox="0 0 100 140"><rect width="100" height="140" rx="8" fill="#1e293b" stroke="#fbbf24" stroke-width="4"/><path d="M30 40 L70 100 M70 40 L30 100" stroke="#fbbf24" stroke-width="4"/></svg>`;  
+      }  
+      const suitSymbols = { 'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣' };  
+      const colors = { 'S': '#000', 'C': '#000', 'H': '#dc2626', 'D': '#dc2626' };  
+      const color = colors[card.suit];  
+      const symbol = suitSymbols[card.suit];  
+      const rank = card.rank === 'T' ? '10' : card.rank;  
+  
+      return `  
+        <svg class="card-img ${animClass}" viewBox="0 0 100 140">  
+          <rect width="100" height="140" rx="8" fill="#fff" stroke="#000" stroke-width="2"/>  
+          <text x="8" y="24" font-size="22" font-weight="bold" fill="${color}">${rank}</text>  
+          <text x="8" y="44" font-size="20" fill="${color}">${symbol}</text>  
+          <text x="50" y="85" font-size="40" text-anchor="middle" fill="${color}">${symbol}</text>  
+        </svg>  
+      `;  
+    }  
+
+    function getBigCardSvg(card) {  
+      if (!card) return '';  
+      const suitSymbols = { 'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣' };  
+      const colors = { 'S': '#000', 'C': '#000', 'H': '#dc2626', 'D': '#dc2626' };  
+      const color = colors[card.suit];  
+      const symbol = suitSymbols[card.suit];  
+      const rank = card.rank === 'T' ? '10' : card.rank;  
+  
+      return `  
+        <svg class="big-card-svg" viewBox="0 0 100 140">  
+          <rect width="100" height="140" rx="8" fill="#fff" stroke="#000" stroke-width="2"/>  
+          <text x="8" y="24" font-size="22" font-weight="bold" fill="${color}">${rank}</text>  
+          <text x="8" y="44" font-size="20" fill="${color}">${symbol}</text>  
+          <text x="50" y="85" font-size="40" text-anchor="middle" fill="${color}">${symbol}</text>  
+        </svg>  
+      `;  
+    }
+
+    function showBigCardsOverlay(cards) {
+      const overlay = document.getElementById('cardOverlay');
+      const container = document.getElementById('bigCardsContainer');
+      const countdownEl = document.getElementById('overlayCountdown');
+      
+      container.innerHTML = '';
+      cards.forEach(c => { container.innerHTML += getBigCardSvg(c); });
+
+      overlay.style.display = 'flex';
+      let timeLeft = 3;
+      countdownEl.innerText = timeLeft;
+
+      if (overlayTimeout) clearTimeout(overlayTimeout);
+      if (overlayInterval) clearInterval(overlayInterval);
+
+      overlayInterval = setInterval(() => {
+        timeLeft--;
+        if (timeLeft >= 0) countdownEl.innerText = timeLeft;
+      }, 1000);
+
+      overlayTimeout = setTimeout(() => {
+        overlay.style.display = 'none';
+        clearInterval(overlayInterval);
+      }, 3000);
+    }
+  
+    function switchLoginTab(type) {  
+      if (type === 'PLAYER') {  
+        document.getElementById('playerForm').style.display = 'block';  
+        document.getElementById('adminForm').style.display = 'none';  
+        document.getElementById('playerTab').classList.add('active');  
+        document.getElementById('adminTab').classList.remove('active');  
+      } else {  
+        document.getElementById('playerForm').style.display = 'none';  
+        document.getElementById('adminForm').style.display = 'block';  
+        document.getElementById('adminTab').classList.add('active');  
+        document.getElementById('playerTab').classList.remove('active');  
+      }  
+    }  
+  
+    function signPlayerIn() {  
+      const name = document.getElementById('pName').value.trim();  
+      if (name) {  
+        socket.emit('joinPlayer', { name });  
+        document.getElementById('loginModal').style.display = 'none';  
+      }  
+    }  
+  
+    function signAdminIn() {  
+      const username = document.getElementById('aUser').value.trim();  
+      const password = document.getElementById('aPass').value.trim();  
+      socket.emit('joinAdmin', { username, password });  
+    }  
+
+    function rejoinGame() {
+      socket.emit('rejoinAfk');
+    }
+  
+    socket.on('adminAuthSuccess', () => {  
+      isUserAdmin = true;  
+      document.getElementById('loginModal').style.display = 'none';  
+      document.getElementById('adminMenuBtn').style.display = 'block';  
+    });  
+  
+    socket.on('adminAuthFailed', (msg) => alert(msg));  
+  
+    function handleAction(act) {  
+      socket.emit('playerAction', { action: act });  
+    }  
+
+    function respondSideshow(accept) {
+      document.getElementById('sideshowModal').style.display = 'none';
+      socket.emit('sideshowResponse', { accept });
+    }
+
+    socket.on('sideshowIncoming', (data) => {
+      document.getElementById('sideshowMsg').innerText = `${data.requesterName} has requested a Side Show. Compare cards privately?`;
+      document.getElementById('sideshowModal').style.display = 'flex';
+    });
+
+    socket.on('animateBet', (data) => {
+      playAudio('chip');
+      const seatEl = document.getElementById(`seat-${data.fromId}`);
+      const potEl = document.getElementById('potContainer');
+      if (seatEl && potEl) spawnChipAnimation(seatEl, potEl);
+    });
+  
+    socket.on('yourCards', (cards) => {   
+      myCards = cards;  
+      isSeenLocal = true;  
+      showBigCardsOverlay(cards);
+    });  
+  
+    function toggleDrawer() {  
+      if (!isUserAdmin) return;  
+      document.getElementById('adminDrawer').classList.toggle('open');  
+    }  
+  
+    function manageCoins(targetSocketId, actionType) {  
+      if (!isUserAdmin) return;  
+      const input = prompt("Enter Coin Amount:");  
+      if (input !== null && input !== "") {  
+        const amount = parseInt(input, 10);  
+        if (!isNaN(amount)) socket.emit('adminManageCoins', { targetSocketId, actionType, amount });  
+      }  
+    }  
+  
+    socket.on('timerUpdate', (data) => {  
+      document.getElementById('timerBox').innerText = data.isExtraTime ? "EXTRA: " + data.timer + "s" : "Timer: " + data.timer + "s";  
+      if (data.timer <= 5) playAudio('tick');
+    });  
+  
+    socket.on('stateUpdate', (data) => {  
+      document.getElementById('potVal').innerText = data.pot;  
+      document.getElementById('statusBox').innerText = data.statusMessage;  
+
+      const handBanner = document.getElementById('handBanner');
+      if (data.winningHandName) {
+        handBanner.innerText = `HAND: ${data.winningHandName}`;
+        handBanner.style.display = 'block';
+      } else {
+        handBanner.style.display = 'none';
+      }
+
+      if (data.statusMessage === 'Dealing cards...') playAudio('deal');
+      if (data.winnerId) {
+        playAudio('win');
+        const winnerSeat = document.getElementById(`seat-${data.winnerId}`);
+        const potEl = document.getElementById('potContainer');
+        if (winnerSeat && potEl) spawnChipAnimation(potEl, winnerSeat);
+      }
+  
+      const seatsWin = document.getElementById('seatsContainer');  
+      const coinArea = document.getElementById('coinControlArea');  
+      seatsWin.innerHTML = '';  
+      coinArea.innerHTML = '';  
+  
+      const me = data.players[socket.id];  
+      const isMyTurn = (data.currentTurnId === socket.id);  
+
+      if (isMyTurn && !wasMyTurn) {
+        if (navigator.vibrate) navigator.vibrate([100]);
+      }
+      wasMyTurn = isMyTurn;
+
+      if (me) {  
+        const isAfk = me.isAfk || me.status === 'AFK';
+        document.getElementById('btnRejoin').style.display = isAfk ? 'inline-block' : 'none';
+
+        document.getElementById('btnPack').disabled = !isMyTurn || isAfk;  
+        document.getElementById('btnChaal').disabled = !isMyTurn || isAfk;  
+        document.getElementById('btnShow').disabled = !isMyTurn || isAfk;  
+        document.getElementById('btnSideShow').disabled = !isMyTurn || !me.seen || isAfk;
+
+        if (me.seen) {  
+          document.getElementById('btnBlind').style.display = 'none';  
+          document.getElementById('btnSee').style.display = 'none';  
+          document.getElementById('btnSideShow').style.display = 'inline-block';
+        } else {  
+          document.getElementById('btnBlind').style.display = 'inline-block';  
+          document.getElementById('btnSee').style.display = 'inline-block';  
+          document.getElementById('btnSideShow').style.display = 'none';
+          document.getElementById('btnBlind').disabled = !isMyTurn || isAfk;  
+          isSeenLocal = false;  
+        }  
+      }  
+  
+      const players = Object.values(data.players);  
+      const seatPositions = [  
+        { top: '82%', left: '50%' }, { top: '68%', left: '15%' }, { top: '28%', left: '10%' },  
+        { top: '10%', left: '30%' }, { top: '10%', left: '70%' }, { top: '28%', left: '90%' }, { top: '68%', left: '85%' }  
+      ];  
+  
+      players.forEach((p, idx) => {  
+        if (idx < seatPositions.length) {  
+          const pos = seatPositions[idx];  
+          const isTurn = p.id === data.currentTurnId;  
+          const isDealer = p.id === data.dealerId;  
+          const isWinner = p.id === data.winnerId;  
+  
+          let displayCards = [null, null, null];  
+          if (data.isShowPhase) {  
+            displayCards = p.cards || [null, null, null];  
+          } else if (p.id === socket.id && isSeenLocal) {  
+            displayCards = myCards;  
+          }  
+  
+          let cardsHtml = '<div class="card-deck">';  
+          displayCards.forEach((c, cIdx) => {   
+            cardsHtml += getCardSvg(c, (data.statusMessage === 'Dealing cards...') ? (cIdx + 1) : 0);   
+          });  
+          cardsHtml += '</div>';  
+  
+          const dealerBadgeHtml = isDealer ? '<div class="dealer-badge">D</div>' : '';  
+  
+          seatsWin.innerHTML += `  
+            <div id="seat-${p.id}" class="seat ${isTurn ? 'active-turn' : ''} ${isWinner ? 'winner' : ''}" style="top:${pos.top}; left:${pos.left};">  
+              <div class="avatar">  
+                ${dealerBadgeHtml}  
+                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=${p.name}" />  
+              </div>  
+              <div class="seat-label">${p.name} (${p.status})<br><span style="color:#22c55e;">₹${p.coins}</span></div>  
+              ${cardsHtml}  
+            </div>  
+          `;  
+        }  
+  
+        if (isUserAdmin) {  
+          coinArea.innerHTML += `  
+            <div style="font-size:12px; margin-bottom:10px; background:#1e293b; padding:8px; border-radius:8px; border:1px solid #334155;">  
+              <b>${p.name}</b> (<span style="color:#22c55e;">₹${p.coins}</span>)<br><br>  
+              <button onclick="manageCoins('${p.id}', 'ADD')" style="background:#22c55e; border:none; padding:4px 8px; color:white; border-radius:4px; cursor:pointer;">+ Add</button>  
+              <button onclick="manageCoins('${p.id}', 'REMOVE')" style="background:#ef4444; border:none; padding:4px 8px; color:white; border-radius:4px; cursor:pointer;">- Remove</button>  
+              <button onclick="manageCoins('${p.id}', 'SET')" style="background:#3b82f6; border:none; padding:4px 8px; color:white; border-radius:4px; cursor:pointer;">Set</button>  
+            </div>  
+          `;  
+        }  
+      });  
+    });  
+  </script>  
+</body>  
+</html>
+
+<!-- SIDE SHOW UI -->
+<button id="sideshow-btn" style="display: none; position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 100; background: #d35400; color: white; padding: 10px 20px; border-radius: 20px; font-weight: bold; border: 2px solid gold;">SIDE SHOW</button>
+<div id="sideshow-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.95); color: white; padding: 25px; border-radius: 15px; z-index: 1000; text-align: center; border: 2px solid gold;">
+    <p style="font-size: 18px; margin-bottom: 20px;"><b id="sideshow-requester" style="color: gold;">Player</b> is requesting a Side Show!</p>
+    <button id="accept-sideshow" style="background: #27ae60; color: white; padding: 10px 25px; margin: 5px; border: none; border-radius: 5px; font-weight: bold;">Accept</button>
+    <button id="decline-sideshow" style="background: #c0392b; color: white; padding: 10px 25px; margin: 5px; border: none; border-radius: 5px; font-weight: bold;">Decline</button>
+</div>
+
+<!-- SIDE SHOW UI -->
+<button id="sideshow-btn" style="display: none; position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 100; background: #d35400; color: white; padding: 10px 20px; border-radius: 20px; font-weight: bold; border: 2px solid gold;">SIDE SHOW</button>
+<div id="sideshow-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.95); color: white; padding: 25px; border-radius: 15px; z-index: 1000; text-align: center; border: 2px solid gold;">
+    <p style="font-size: 18px; margin-bottom: 20px;"><b id="sideshow-requester" style="color: gold;">Player</b> is requesting a Side Show!</p>
+    <button id="accept-sideshow" style="background: #27ae60; color: white; padding: 10px 25px; margin: 5px; border: none; border-radius: 5px; font-weight: bold;">Accept</button>
+    <button id="decline-sideshow" style="background: #c0392b; color: white; padding: 10px 25px; margin: 5px; border: none; border-radius: 5px; font-weight: bold;">Decline</button>
+</div>

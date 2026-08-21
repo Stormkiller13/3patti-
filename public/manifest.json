@@ -1,0 +1,8 @@
+{
+  "name": "3 Patti Game",
+  "short_name": "3Patti",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d"
+}
