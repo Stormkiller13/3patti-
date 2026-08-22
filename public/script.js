@@ -1,75 +1,86 @@
 const socket = io();
 
-let myPlayerId = localStorage.getItem('patti_player_id');
-if (!myPlayerId) {
-  myPlayerId = 'usr_' + Math.random().toString(36).substring(2, 9);
-  localStorage.setItem('patti_player_id', myPlayerId);
-}
+let currentRole = 'player';
 
-let myName = localStorage.getItem('patti_player_name');
-if (!myName) {
-  myName = 'Player_' + Math.floor(1000 + Math.random() * 9000);
-  localStorage.setItem('patti_player_name', myName);
-}
-
-const currentRoomId = 'main-room';
-let myCards = [];
-
-// Join room on connection
-socket.on('connect', () => {
-  socket.emit('joinRoom', {
-    roomId: currentRoomId,
-    playerName: myName,
-    playerId: myPlayerId
+// Handle Role Switching Tabs
+document.querySelectorAll('.tab, [class*="tab"]').forEach(tab => {
+  tab.addEventListener('click', (e) => {
+    const text = e.target.textContent.toLowerCase();
+    if (text.includes('admin')) {
+      currentRole = 'admin';
+    } else {
+      currentRole = 'player';
+    }
   });
 });
 
+// Join / Admin Login Handler
+document.addEventListener('click', (e) => {
+  if (e.target.tagName === 'BUTTON' && (e.target.textContent.includes('LOGIN') || e.target.textContent.includes('JOIN'))) {
+    e.preventDefault();
+    const inputs = document.querySelectorAll('input');
+    const name = inputs[0] ? inputs[0].value : 'Player';
+    
+    socket.emit('joinGame', { name: name || 'User', role: currentRole });
+
+    // Hide Modal Overlay
+    const modal = e.target.closest('div[class*="modal"]') || e.target.parentElement;
+    if (modal) modal.style.display = 'none';
+  }
+});
+
+// Sync State & Render Players
 socket.on('gameState', (state) => {
-  const potElement = document.querySelector('.pot, #pot, [class*="pot"]');
-  if (potElement) {
-    potElement.innerText = `₹${state.pot}`;
+  // Update Pot
+  const potText = Array.from(document.querySelectorAll('*')).find(el => el.textContent.includes('₹') || el.textContent.includes('Waiting'));
+  if (potText) {
+    potText.innerHTML = state.gameStarted ? `POT<br>₹${state.pot}` : `Waiting...<br>₹${state.pot}`;
   }
 
-  const activePlayer = state.players[state.currentTurnIndex];
-  if (activePlayer && activePlayer.id === myPlayerId) {
-    console.log("It's your turn!");
+  // Render Seats around Table
+  let seatsContainer = document.getElementById('seats-container');
+  if (!seatsContainer) {
+    seatsContainer = document.createElement('div');
+    seatsContainer.id = 'seats-container';
+    document.body.appendChild(seatsContainer);
   }
-});
+  seatsContainer.innerHTML = '';
 
-socket.on('dealCards', (data) => {
-  myCards = data.cards;
-});
+  state.players.forEach((p, index) => {
+    const seat = document.createElement('div');
+    seat.className = 'player-seat';
+    seat.style.position = 'absolute';
+    
+    // Position seats around table
+    if (index === 0) { seat.style.bottom = '20%'; seat.style.left = '40%'; }
+    else if (index === 1) { seat.style.left = '10%'; seat.style.top = '40%'; }
+    else if (index === 2) { seat.style.top = '15%'; seat.style.left = '40%'; }
+    else { seat.style.right = '10%'; seat.style.top = '40%'; }
 
-socket.on('cardsRevealed', (cards) => {
-  myCards = cards;
-});
+    const isMe = p.id === socket.id;
+    const cardsHTML = p.cards.length > 0 ? p.cards.map(c => 
+      `<span style="background:#fff; color:${(c.suit==='♥'||c.suit==='♦')?'red':'black'}; padding:2px 4px; border-radius:3px; margin:1px; font-weight:bold;">
+        ${p.seeCards || isMe ? c.value + c.suit : '🂠'}
+      </span>`
+    ).join('') : '';
 
-socket.on('message', (msg) => alert(msg));
-socket.on('errorMsg', (msg) => alert(msg));
-socket.on('kicked', (msg) => {
-  alert(msg);
-  window.location.reload();
-});
-
-function sendAction(action) {
-  socket.emit('playerMove', { action });
-}
-
-function sendSideshow() {
-  socket.emit('sideshow');
-}
-
-function startGame() {
-  socket.emit('startGame');
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-  const buttons = document.querySelectorAll('button, .btn, [class*="button"]');
-  buttons.forEach(btn => {
-    const text = btn.innerText.toLowerCase();
-    if (text.includes('pack')) btn.onclick = () => sendAction('pack');
-    else if (text.includes('see')) btn.onclick = () => sendAction('see');
-    else if (text.includes('blind') || text.includes('chaal') || text.includes('show')) btn.onclick = () => sendAction('chaal');
-    else if (text.includes('side')) btn.onclick = sendSideshow;
+    seat.innerHTML = `
+      <div style="background:rgba(15,23,42,0.9); border:2px solid ${isMe?'#22c55e':'#3b82f6'}; padding:8px; border-radius:8px; color:white; text-align:center; min-width:90px;">
+        <div style="font-weight:bold;">${p.name} ${isMe ? '(You)' : ''}</div>
+        <div style="color:#eab308; font-size:12px;">₹${p.chips}</div>
+        <div style="color:#22c55e; font-size:10px; margin-top:2px;">${p.status}</div>
+        <div style="margin-top:4px;">${cardsHTML}</div>
+      </div>
+    `;
+    seatsContainer.appendChild(seat);
   });
+});
+
+// Action Buttons
+document.addEventListener('click', (e) => {
+  const txt = e.target.textContent.toUpperCase();
+  if (txt.includes('PACK')) socket.emit('playerAction', { action: 'pack' });
+  if (txt.includes('SEE')) socket.emit('playerAction', { action: 'see' });
+  if (txt.includes('BLIND')) socket.emit('playerAction', { action: 'blind' });
+  if (txt.includes('CHAAL')) socket.emit('playerAction', { action: 'chaal' });
 });
