@@ -58,7 +58,7 @@ function advanceTurn(room) {
   do {
     room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
   } while (room.players[room.currentTurnIndex].isPacked || room.players[room.currentTurnIndex].disconnected);
-  
+
   broadcastState(room);
 }
 
