@@ -46,7 +46,6 @@ function evaluateHand(cards) {
   let isTrail = (v1 === v2 && v2 === v3);
   let isPair = (v1 === v2 || v2 === v3 || v1 === v3);
 
-  // A-2-3 (A-2-3 sequence score = 13.5, placing it just below A-K-Q = 14)
   let seqScore = (v1 === 2 && v3 === 14) ? 13.5 : v3;
 
   if (isTrail) return 6000000 + v1;
@@ -144,20 +143,22 @@ io.on('connection', (socket) => {
     const existingIndex = gameState.players.findIndex(p => p.id === socket.id);
     const avatar = isAdmin ? '👑' : avatars[gameState.players.length % avatars.length];
 
-    const playerObj = {
-      id: socket.id,
-      name: name || (isAdmin ? 'Admin' : 'Player ' + (gameState.players.length + 1)),
-      chips: 1000,
-      status: gameState.gameStarted ? 'WAITING' : 'BLIND',
-      cards: [],
-      seeCards: false,
-      isAdmin: isAdmin,
-      avatar: avatar
-    };
-
     if (existingIndex !== -1) {
-      gameState.players[existingIndex] = playerObj;
+      // Preserve existing player state on reconnect/re-login
+      gameState.players[existingIndex].name = name || gameState.players[existingIndex].name;
+      gameState.players[existingIndex].isAdmin = isAdmin;
+      gameState.players[existingIndex].avatar = avatar;
     } else {
+      const playerObj = {
+        id: socket.id,
+        name: name || (isAdmin ? 'Admin' : 'Player ' + (gameState.players.length + 1)),
+        chips: 1000,
+        status: gameState.gameStarted ? 'WAITING' : 'BLIND',
+        cards: [],
+        seeCards: false,
+        isAdmin: isAdmin,
+        avatar: avatar
+      };
       gameState.players.push(playerObj);
     }
 
@@ -175,9 +176,12 @@ io.on('connection', (socket) => {
     const player = gameState.players[playerIndex];
 
     if (action === 'see') {
-      player.seeCards = true;
-      player.status = 'SEEN';
-      io.emit('gameState', gameState);
+      // Allow card viewing only if player is actively BLIND
+      if (player.status === 'BLIND') {
+        player.seeCards = true;
+        player.status = 'SEEN';
+        io.emit('gameState', gameState);
+      }
       return;
     }
 
@@ -197,7 +201,6 @@ io.on('connection', (socket) => {
         gameState.pot += requiredAmount;
         nextTurn();
       } else {
-        // Auto-pack player if insufficient funds to cover mandatory turn bet
         player.status = 'PACKED';
         nextTurn();
         checkRemainingPlayers();
@@ -205,13 +208,19 @@ io.on('connection', (socket) => {
     } else if (action === 'show') {
       const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT' && p.status !== 'WAITING');
       
-      // Strict Teen Patti rule: Show is only available heads-up (2 players left)
       if (active.length === 2) {
         const requiredAmount = player.status === 'SEEN' ? 20 : 10;
-        if (player.chips >= requiredAmount) {
-          player.chips -= requiredAmount;
-          gameState.pot += requiredAmount;
+        
+        if (player.chips < requiredAmount) {
+          player.status = 'PACKED';
+          nextTurn();
+          checkRemainingPlayers();
+          io.emit('gameState', gameState);
+          return;
         }
+
+        player.chips -= requiredAmount;
+        gameState.pot += requiredAmount;
 
         let bestScore = -1;
         let winner = active[0];
