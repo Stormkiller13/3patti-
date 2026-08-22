@@ -15,7 +15,7 @@ let gameState = {
   players: [],
   currentTurn: 0,
   gameStarted: false,
-  bootAmount: 2,
+  bootAmount: 5,
   lastWinner: '',
   showAllCards: false
 };
@@ -148,17 +148,19 @@ io.on('connection', (socket) => {
       }
     }
 
-    const existingIndex = gameState.players.findIndex(p => p.id === socket.id);
+    const cleanName = (name || (isAdmin ? 'Admin' : 'Player ' + (gameState.players.length + 1))).trim();
+    const existingIndex = gameState.players.findIndex(p => p.id === socket.id || p.name.toLowerCase() === cleanName.toLowerCase());
     const avatar = isAdmin ? '👑' : avatars[gameState.players.length % avatars.length];
 
     if (existingIndex !== -1) {
-      gameState.players[existingIndex].name = name || gameState.players[existingIndex].name;
+      gameState.players[existingIndex].id = socket.id;
+      gameState.players[existingIndex].name = cleanName;
       gameState.players[existingIndex].isAdmin = isAdmin;
       gameState.players[existingIndex].avatar = avatar;
     } else {
       const playerObj = {
         id: socket.id,
-        name: name || (isAdmin ? 'Admin' : 'Player ' + (gameState.players.length + 1)),
+        name: cleanName,
         chips: 1000,
         status: gameState.gameStarted ? 'WAITING' : 'BLIND',
         cards: [],
@@ -188,6 +190,8 @@ io.on('connection', (socket) => {
       return;
     }
 
+    if (!gameState.gameStarted) return;
+
     if (action === 'see') {
       if (player.status === 'BLIND') {
         player.seeCards = true;
@@ -197,9 +201,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (gameState.gameStarted && gameState.currentTurn !== playerIndex) {
-      return;
-    }
+    if (gameState.currentTurn !== playerIndex) return;
 
     if (action === 'pack') {
       player.status = 'PACKED';

@@ -3,51 +3,201 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Royal 3 Patti</title>
-  <link rel="stylesheet" href="style.css">
+  <title>3 Patti</title>
   <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #0b0e14; color: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+    
+    #loginScreen { background: #161b22; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; width: 320px; }
+    #loginScreen h2 { margin-bottom: 20px; color: #f1c40f; }
+    #loginScreen input, #loginScreen select { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #fff; }
+    #loginScreen button { width: 100%; padding: 12px; margin-top: 15px; border-radius: 6px; border: none; background: #27ae60; color: #fff; font-weight: bold; cursor: pointer; font-size: 16px; }
+    
+    #gameScreen { display: none; width: 100vw; height: 100vh; position: relative; flex-direction: column; justify-content: space-between; align-items: center; padding: 20px 0; }
+    
+    .table { width: 85vw; height: 55vh; max-width: 800px; max-height: 400px; background: radial-gradient(circle, #1e824c 0%, #11532e 100%); border: 12px solid #b36b00; border-radius: 200px; position: relative; display: flex; justify-content: center; align-items: center; box-shadow: inset 0 0 50px rgba(0,0,0,0.6), 0 0 30px rgba(0,0,0,0.8); }
+    
+    .pot-container { background: rgba(0,0,0,0.7); border: 2px solid #f1c40f; border-radius: 12px; padding: 10px 20px; text-align: center; }
+    .pot-title { font-size: 12px; color: #f1c40f; letter-spacing: 1px; }
+    .pot-amount { font-size: 24px; font-weight: bold; color: #ffffff; }
+
+    .player-box { position: absolute; background: #161b22; border: 2px solid #30363d; border-radius: 12px; padding: 10px; width: 130px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5); transition: all 0.3s ease; }
+    .player-box.active-turn { border-color: #f39c12; box-shadow: 0 0 15px #f39c12; }
+    
+    .player-top { top: -60px; }
+    .player-bottom { bottom: -60px; }
+    
+    .avatar { font-size: 20px; margin-bottom: 2px; }
+    .player-name { font-weight: bold; font-size: 13px; color: #ecf0f1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .player-chips { font-size: 12px; color: #2ecc71; font-weight: bold; }
+    .player-status { font-size: 10px; font-weight: bold; color: #3498db; margin-top: 2px; }
+    
+    .cards-container { display: flex; justify-content: center; gap: 4px; margin-top: 6px; position: relative; min-height: 48px; }
+    
+    .card { width: 32px; height: 46px; background: #ffffff; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; color: #000; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+    .card.back { background: #2980b9; border: 2px solid #ffffff; }
+    .card.back::after { content: '🂠'; font-size: 20px; color: #ffffff; }
+    .card.red { color: #e74c3c; }
+    .card.black { color: #2c3e50; }
+
+    .see-cards-btn { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #2980b9; color: #fff; border: none; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.4); z-index: 5; }
+    
+    .controls { display: flex; gap: 12px; margin-bottom: 20px; }
+    .action-btn { padding: 12px 24px; border-radius: 25px; border: none; font-weight: bold; font-size: 14px; cursor: pointer; color: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.1s; }
+    .action-btn:active { transform: scale(0.95); }
+    .btn-pack { background: #e74c3c; }
+    .btn-blind { background: #3498db; }
+    .btn-chaal { background: #2ecc71; }
+    .btn-show { background: #e67e22; }
+
+    /* Big Card Modal Overlay */
+    #bigCardModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 1000; flex-direction: column; justify-content: center; align-items: center; }
+    #bigCardModal.active { display: flex; }
+    .big-modal-title { font-size: 22px; color: #f1c40f; margin-bottom: 20px; font-weight: bold; letter-spacing: 1px; }
+    .big-cards-flex { display: flex; gap: 15px; }
+    .big-card { width: 80px; height: 120px; background: #ffffff; border-radius: 8px; display: flex; flex-direction: column; justify-content: space-between; padding: 8px; font-size: 24px; font-weight: bold; box-shadow: 0 0 20px rgba(255,255,255,0.4); }
+    .big-card.red { color: #e74c3c; }
+    .big-card.black { color: #2c3e50; }
+    .big-card-suit { font-size: 32px; align-self: center; }
+    .timer-bar { width: 200px; height: 4px; background: #f1c40f; margin-top: 25px; border-radius: 2px; animation: shrink 3s linear forwards; }
+    @keyframes shrink { from { width: 200px; } to { width: 0px; } }
+  </style>
 </head>
 <body>
 
-  <!-- Game Table Felt -->
-  <div class="poker-table">
-    <div class="pot-badge" id="pot-display">
-      <span id="pot-status">Waiting...</span><br>
-      <span id="pot-amount">₹0</span>
-    </div>
+  <div id="loginScreen">
+    <h2>3 PATTI</h2>
+    <input type="text" id="username" placeholder="Enter Name">
+    <select id="roleSelect" onchange="toggleAdminPass()">
+      <option value="player">Player</option>
+      <option value="admin">Admin</option>
+    </select>
+    <input type="password" id="adminPassword" placeholder="Admin Password" style="display:none;">
+    <button onclick="joinGame()">JOIN GAME</button>
   </div>
 
-  <!-- Dynamic Seats Area -->
-  <div id="seats-container"></div>
-
-  <!-- Login Modal Overlay -->
-  <div class="modal-overlay" id="login-modal">
-    <div class="modal-card">
-      <h2 class="title">ROYAL 3 PATTI</h2>
-      
-      <div class="tab-group">
-        <button class="tab-btn active" id="tab-player">Player</button>
-        <button class="tab-btn" id="tab-admin">Admin</button>
+  <div id="gameScreen">
+    <div style="height: 20px;"></div>
+    <div class="table">
+      <div class="pot-container">
+        <div class="pot-title">POT</div>
+        <div class="pot-amount" id="potAmount">₹0</div>
       </div>
+      <div id="playersContainer"></div>
+    </div>
 
-      <input type="text" id="username-input" class="input-field" placeholder="Enter Name" autocomplete="off">
-      <input type="password" id="password-input" class="input-field hidden" placeholder="Admin Password (admin)">
-
-      <div id="error-msg" class="error-text"></div>
-
-      <button class="action-submit-btn" id="login-submit-btn">JOIN TABLE</button>
+    <div class="controls" id="controls">
+      <button class="action-btn btn-pack" onclick="sendAction('pack')">PACK</button>
+      <button class="action-btn btn-blind" id="blindBtn" onclick="sendAction('blind')">BLIND (₹10)</button>
+      <button class="action-btn btn-chaal" id="chaalBtn" onclick="sendAction('chaal')">CHAAL (₹20)</button>
+      <button class="action-btn btn-show" id="showBtn" onclick="sendAction('show')">SHOW (₹20)</button>
     </div>
   </div>
 
-  <!-- Bottom Action Controls -->
-  <div class="bottom-action-bar">
-    <button class="btn btn-pack" data-action="pack">PACK</button>
-    <button class="btn btn-blind" data-action="blind">BLIND<br><small>(₹10)</small></button>
-    <button class="btn btn-see" data-action="see">SEE CARDS</button>
-    <button class="btn btn-chaal" data-action="chaal">CHAAL<br><small>(₹20)</small></button>
-    <button class="btn btn-show" data-action="show">SHOW<br><small>(₹20)</small></button>
+  <div id="bigCardModal">
+    <div class="big-modal-title">YOUR CARDS</div>
+    <div class="big-cards-flex" id="bigCardsContainer"></div>
+    <div class="timer-bar"></div>
   </div>
 
-  <script src="script.js"></script>
+  <script>
+    const socket = io();
+    let myId = null;
+    let localSeeTriggered = false;
+
+    function toggleAdminPass() {
+      const role = document.getElementById('roleSelect').value;
+      document.getElementById('adminPassword').style.display = role === 'admin' ? 'block' : 'none';
+    }
+
+    function joinGame() {
+      const name = document.getElementById('username').value;
+      const role = document.getElementById('roleSelect').value;
+      const password = document.getElementById('adminPassword').value;
+      socket.emit('joinGame', { name, role, password });
+    }
+
+    socket.on('joinedSuccess', () => {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('gameScreen').style.display = 'flex';
+      myId = socket.id;
+    });
+
+    socket.on('authError', (msg) => {
+      alert(msg);
+    });
+
+    function sendAction(action) {
+      if (action === 'see') {
+        localSeeTriggered = true;
+      }
+      socket.emit('playerAction', { action });
+    }
+
+    function triggerBigCardModal(cards) {
+      const modal = document.getElementById('bigCardModal');
+      const container = document.getElementById('bigCardsContainer');
+      container.innerHTML = '';
+
+      cards.forEach(c => {
+        const isRed = c.suit === '♥' || c.suit === '♦';
+        const cardEl = document.createElement('div');
+        cardEl.className = 'big-card ' + (isRed ? 'red' : 'black');
+        cardEl.innerHTML = `<div>${c.value}</div><div class="big-card-suit">${c.suit}</div>`;
+        container.appendChild(cardEl);
+      });
+
+      modal.classList.add('active');
+      setTimeout(() => {
+        modal.classList.remove('active');
+      }, 3000);
+    }
+
+    socket.on('gameState', (state) => {
+      document.getElementById('potAmount').innerText = '₹' + state.pot;
+      const container = document.getElementById('playersContainer');
+      container.innerHTML = '';
+
+      const me = state.players.find(p => p.id === socket.id);
+      
+      if (localSeeTriggered && me && me.cards && me.cards.length === 3) {
+        triggerBigCardModal(me.cards);
+        localSeeTriggered = false;
+      }
+
+      state.players.forEach((p, idx) => {
+        const isMe = p.id === socket.id;
+        const isTurn = state.gameStarted && state.currentTurn === idx;
+        const isTop = idx === 0;
+
+        const box = document.createElement('div');
+        box.className = 'player-box ' + (isTop ? 'player-top' : 'player-bottom') + (isTurn ? ' active-turn' : '');
+
+        let cardsHtml = '';
+        if (p.cards && p.cards.length === 3 && (p.seeCards && isMe || state.showAllCards)) {
+          cardsHtml = p.cards.map(c => {
+            const isRed = c.suit === '♥' || c.suit === '♦';
+            return `<div class="card ${isRed ? 'red' : 'black'}">${c.value}<span>${c.suit}</span></div>`;
+          }).join('');
+        } else {
+          cardsHtml = `<div class="card back"></div><div class="card back"></div><div class="card back"></div>`;
+          if (isMe && p.status === 'BLIND') {
+            cardsHtml += `<button class="see-cards-btn" onclick="sendAction('see')">SEE CARDS</button>`;
+          }
+        }
+
+        box.innerHTML = `
+          <div class="avatar">${p.avatar}</div>
+          <div class="player-name">${p.name} ${isMe ? '(You)' : ''}</div>
+          <div class="player-chips">₹${p.chips}</div>
+          <div class="player-status">${p.status}</div>
+          <div class="cards-container">${cardsHtml}</div>
+        `;
+
+        container.appendChild(box);
+      });
+    });
+  </script>
 </body>
 </html>
