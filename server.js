@@ -46,9 +46,12 @@ function evaluateHand(cards) {
   let isTrail = (v1 === v2 && v2 === v3);
   let isPair = (v1 === v2 || v2 === v3 || v1 === v3);
 
+  // A-2-3 (A-2-3 sequence score = 13.5, placing it just below A-K-Q = 14)
+  let seqScore = (v1 === 2 && v3 === 14) ? 13.5 : v3;
+
   if (isTrail) return 6000000 + v1;
-  if (isFlush && isSeq) return 5000000 + (v1 === 2 && v3 === 14 ? 3 : v3);
-  if (isSeq) return 4000000 + (v1 === 2 && v3 === 14 ? 3 : v3);
+  if (isFlush && isSeq) return 5000000 + seqScore;
+  if (isSeq) return 4000000 + seqScore;
   if (isFlush) return 3000000 + v3 * 400 + v2 * 20 + v1;
   if (isPair) {
     let pairVal = (v1 === v2) ? v1 : ((v2 === v3) ? v2 : v1);
@@ -186,23 +189,30 @@ io.on('connection', (socket) => {
       player.status = 'PACKED';
       nextTurn();
       checkRemainingPlayers();
-    } else if (action === 'blind') {
-      const amt = 10;
-      if (player.chips >= amt) {
-        player.chips -= amt;
-        gameState.pot += amt;
+    } else if (action === 'blind' || action === 'chaal') {
+      const requiredAmount = player.status === 'SEEN' ? 20 : 10;
+      
+      if (player.chips >= requiredAmount) {
+        player.chips -= requiredAmount;
+        gameState.pot += requiredAmount;
         nextTurn();
-      }
-    } else if (action === 'chaal') {
-      const amt = player.status === 'BLIND' ? 10 : 20;
-      if (player.chips >= amt) {
-        player.chips -= amt;
-        gameState.pot += amt;
+      } else {
+        // Auto-pack player if insufficient funds to cover mandatory turn bet
+        player.status = 'PACKED';
         nextTurn();
+        checkRemainingPlayers();
       }
     } else if (action === 'show') {
       const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT' && p.status !== 'WAITING');
-      if (active.length >= 2) {
+      
+      // Strict Teen Patti rule: Show is only available heads-up (2 players left)
+      if (active.length === 2) {
+        const requiredAmount = player.status === 'SEEN' ? 20 : 10;
+        if (player.chips >= requiredAmount) {
+          player.chips -= requiredAmount;
+          gameState.pot += requiredAmount;
+        }
+
         let bestScore = -1;
         let winner = active[0];
 
