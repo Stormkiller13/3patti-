@@ -20,6 +20,8 @@ let gameState = {
   showAllCards: false
 };
 
+let resetTimer = null;
+
 const suits = ['♠', '♥', '♦', '♣'];
 const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const valueRank = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 };
@@ -75,6 +77,11 @@ function ensureValidTurn() {
 }
 
 function startNewGame() {
+  if (resetTimer) {
+    clearTimeout(resetTimer);
+    resetTimer = null;
+  }
+
   const eligible = gameState.players.filter(p => p.chips >= gameState.bootAmount);
   if (eligible.length < 2) {
     gameState.gameStarted = false;
@@ -119,7 +126,8 @@ function checkRemainingPlayers() {
     }
     gameState.showAllCards = true;
     gameState.gameStarted = false;
-    setTimeout(() => {
+    if (resetTimer) clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => {
       startNewGame();
       io.emit('gameState', gameState);
     }, 4000);
@@ -144,7 +152,6 @@ io.on('connection', (socket) => {
     const avatar = isAdmin ? '👑' : avatars[gameState.players.length % avatars.length];
 
     if (existingIndex !== -1) {
-      // Preserve existing player state on reconnect/re-login
       gameState.players[existingIndex].name = name || gameState.players[existingIndex].name;
       gameState.players[existingIndex].isAdmin = isAdmin;
       gameState.players[existingIndex].avatar = avatar;
@@ -175,8 +182,13 @@ io.on('connection', (socket) => {
     if (playerIndex === -1) return;
     const player = gameState.players[playerIndex];
 
+    if (action === 'resetGame' && player.isAdmin) {
+      startNewGame();
+      io.emit('gameState', gameState);
+      return;
+    }
+
     if (action === 'see') {
-      // Allow card viewing only if player is actively BLIND
       if (player.status === 'BLIND') {
         player.seeCards = true;
         player.status = 'SEEN';
@@ -185,7 +197,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (gameState.gameStarted && gameState.currentTurn !== playerIndex && !player.isAdmin) {
+    if (gameState.gameStarted && gameState.currentTurn !== playerIndex) {
       return;
     }
 
@@ -237,23 +249,34 @@ io.on('connection', (socket) => {
         gameState.lastWinner = winner.name + ' won Show (₹' + gameState.pot + ')';
         gameState.showAllCards = true;
         gameState.gameStarted = false;
-        setTimeout(() => {
+        if (resetTimer) clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
           startNewGame();
           io.emit('gameState', gameState);
         }, 4000);
       }
-    } else if (action === 'resetGame' && player.isAdmin) {
-      startNewGame();
     }
 
     io.emit('gameState', gameState);
   });
 
   socket.on('disconnect', () => {
-    gameState.players = gameState.players.filter(p => p.id !== socket.id);
+    const disconnectedIndex = gameState.players.findIndex(p => p.id === socket.id);
+    if (disconnectedIndex !== -1) {
+      gameState.players.splice(disconnectedIndex, 1);
+
+      if (disconnectedIndex < gameState.currentTurn) {
+        gameState.currentTurn--;
+      }
+    }
+
     if (gameState.players.length < 2) {
       gameState.gameStarted = false;
       gameState.currentTurn = 0;
+      if (resetTimer) {
+        clearTimeout(resetTimer);
+        resetTimer = null;
+      }
     } else {
       if (gameState.currentTurn >= gameState.players.length) {
         gameState.currentTurn = 0;
