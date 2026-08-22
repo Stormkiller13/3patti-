@@ -1,36 +1,75 @@
+const socket = io();
 
-// --- SIDESHOW LOGIC ---
-document.addEventListener('click', (e) => {
-    if (e.target && e.target.id === 'sideshow-btn') {
-        socket.emit('playerAction', { action: 'SIDESHOW_REQUEST' });
-    } else if (e.target && e.target.id === 'accept-sideshow') {
-        socket.emit('sideshowResponse', { accept: true });
-        document.getElementById('sideshow-modal').style.display = 'none';
-    } else if (e.target && e.target.id === 'decline-sideshow') {
-        socket.emit('sideshowResponse', { accept: false });
-        document.getElementById('sideshow-modal').style.display = 'none';
-    }
+let myPlayerId = localStorage.getItem('patti_player_id');
+if (!myPlayerId) {
+  myPlayerId = 'usr_' + Math.random().toString(36).substring(2, 9);
+  localStorage.setItem('patti_player_id', myPlayerId);
+}
+
+let myName = localStorage.getItem('patti_player_name');
+if (!myName) {
+  myName = 'Player_' + Math.floor(1000 + Math.random() * 9000);
+  localStorage.setItem('patti_player_name', myName);
+}
+
+const currentRoomId = 'main-room';
+let myCards = [];
+
+// Join room on connection
+socket.on('connect', () => {
+  socket.emit('joinRoom', {
+    roomId: currentRoomId,
+    playerName: myName,
+    playerId: myPlayerId
+  });
 });
 
-socket.on('sideshowIncoming', (data) => {
-    const requesterElem = document.getElementById('sideshow-requester');
-    const modalElem = document.getElementById('sideshow-modal');
-    if (requesterElem && modalElem) {
-        requesterElem.innerText = data.requesterName;
-        modalElem.style.display = 'block';
-    }
+socket.on('gameState', (state) => {
+  const potElement = document.querySelector('.pot, #pot, [class*="pot"]');
+  if (potElement) {
+    potElement.innerText = `₹${state.pot}`;
+  }
+
+  const activePlayer = state.players[state.currentTurnIndex];
+  if (activePlayer && activePlayer.id === myPlayerId) {
+    console.log("It's your turn!");
+  }
 });
 
-socket.on('stateUpdate', (state) => {
-    const ssBtn = document.getElementById('sideshow-btn');
-    if (!ssBtn || !state.players || !state.players[socket.id]) return;
-    
-    const myPlayer = state.players[socket.id];
-    // The button will only appear if it is your turn AND you have seen your cards
-    if (myPlayer.seen && state.currentTurnId === socket.id) {
-        ssBtn.style.display = 'inline-block';
-    } else {
-        ssBtn.style.display = 'none';
-    }
+socket.on('dealCards', (data) => {
+  myCards = data.cards;
 });
 
+socket.on('cardsRevealed', (cards) => {
+  myCards = cards;
+});
+
+socket.on('message', (msg) => alert(msg));
+socket.on('errorMsg', (msg) => alert(msg));
+socket.on('kicked', (msg) => {
+  alert(msg);
+  window.location.reload();
+});
+
+function sendAction(action) {
+  socket.emit('playerMove', { action });
+}
+
+function sendSideshow() {
+  socket.emit('sideshow');
+}
+
+function startGame() {
+  socket.emit('startGame');
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const buttons = document.querySelectorAll('button, .btn, [class*="button"]');
+  buttons.forEach(btn => {
+    const text = btn.innerText.toLowerCase();
+    if (text.includes('pack')) btn.onclick = () => sendAction('pack');
+    else if (text.includes('see')) btn.onclick = () => sendAction('see');
+    else if (text.includes('blind') || text.includes('chaal') || text.includes('show')) btn.onclick = () => sendAction('chaal');
+    else if (text.includes('side')) btn.onclick = sendSideshow;
+  });
+});
