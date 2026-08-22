@@ -22,6 +22,7 @@ let gameState = {
 
 const suits = ['♠', '♥', '♦', '♣'];
 const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+const valueRank = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 };
 const avatars = ['👑', '🤠', '😎', '🦊', '🦁', '🤖', '🃏'];
 
 function createDeck() {
@@ -34,15 +35,52 @@ function createDeck() {
   return deck.sort(() => Math.random() - 0.5);
 }
 
+function evaluateHand(cards) {
+  if (!cards || cards.length !== 3) return 0;
+  
+  let vals = cards.map(c => valueRank[c.value]).sort((a, b) => a - b);
+  let v1 = vals[0], v2 = vals[1], v3 = vals[2];
+  let isFlush = cards[0].suit === cards[1].suit && cards[1].suit === cards[2].suit;
+  
+  let isSeq = (v1 + 1 === v2 && v2 + 1 === v3) || (v1 === 2 && v2 === 3 && v3 === 14);
+  let isTrail = (v1 === v2 && v2 === v3);
+  let isPair = (v1 === v2 || v2 === v3 || v1 === v3);
+
+  if (isTrail) return 6000000 + v1;
+  if (isFlush && isSeq) return 5000000 + (v1 === 2 && v3 === 14 ? 3 : v3);
+  if (isSeq) return 4000000 + (v1 === 2 && v3 === 14 ? 3 : v3);
+  if (isFlush) return 3000000 + v3 * 400 + v2 * 20 + v1;
+  if (isPair) {
+    let pairVal = (v1 === v2) ? v1 : ((v2 === v3) ? v2 : v1);
+    let kicker = (v1 === v2) ? v3 : ((v2 === v3) ? v1 : v2);
+    return 2000000 + pairVal * 100 + kicker;
+  }
+  return 1000000 + v3 * 400 + v2 * 20 + v1;
+}
+
+function ensureValidTurn() {
+  if (gameState.players.length === 0) return;
+  let count = 0;
+  while (
+    (gameState.players[gameState.currentTurn].status === 'PACKED' ||
+     gameState.players[gameState.currentTurn].status === 'OUT' ||
+     gameState.players[gameState.currentTurn].status === 'WAITING') &&
+    count < gameState.players.length
+  ) {
+    gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
+    count++;
+  }
+}
+
 function startNewGame() {
-  const activePlayers = gameState.players.filter(p => p.chips >= gameState.bootAmount);
-  if (activePlayers.length < 2) {
+  const eligible = gameState.players.filter(p => p.chips >= gameState.bootAmount);
+  if (eligible.length < 2) {
     gameState.gameStarted = false;
     return;
   }
 
   const deck = createDeck();
-  gameState.pot = activePlayers.length * gameState.bootAmount;
+  gameState.pot = eligible.length * gameState.bootAmount;
   gameState.gameStarted = true;
   gameState.currentTurn = 0;
   gameState.showAllCards = false;
@@ -59,23 +97,18 @@ function startNewGame() {
       p.cards = [];
     }
   });
+
+  ensureValidTurn();
 }
 
 function nextTurn() {
   if (gameState.players.length === 0) return;
-  let count = 0;
-  do {
-    gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
-    count++;
-  } while (
-    (gameState.players[gameState.currentTurn].status === 'PACKED' ||
-     gameState.players[gameState.currentTurn].status === 'OUT') &&
-    count < gameState.players.length
-  );
+  gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
+  ensureValidTurn();
 }
 
 function checkRemainingPlayers() {
-  const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT');
+  const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT' && p.status !== 'WAITING');
   if (active.length <= 1 && gameState.gameStarted) {
     const winner = active[0] || gameState.players[0];
     if (winner) {
@@ -112,7 +145,7 @@ io.on('connection', (socket) => {
       id: socket.id,
       name: name || (isAdmin ? 'Admin' : 'Player ' + (gameState.players.length + 1)),
       chips: 1000,
-      status: 'BLIND',
+      status: gameState.gameStarted ? 'WAITING' : 'BLIND',
       cards: [],
       seeCards: false,
       isAdmin: isAdmin,
@@ -168,9 +201,19 @@ io.on('connection', (socket) => {
         nextTurn();
       }
     } else if (action === 'show') {
-      const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT');
+      const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT' && p.status !== 'WAITING');
       if (active.length >= 2) {
-        const winner = active[Math.floor(Math.random() * active.length)];
+        let bestScore = -1;
+        let winner = active[0];
+
+        active.forEach(p => {
+          let score = evaluateHand(p.cards);
+          if (score > bestScore) {
+            bestScore = score;
+            winner = p;
+          }
+        });
+
         winner.chips += gameState.pot;
         gameState.lastWinner = winner.name + ' won Show (₹' + gameState.pot + ')';
         gameState.showAllCards = true;
@@ -196,6 +239,7 @@ io.on('connection', (socket) => {
       if (gameState.currentTurn >= gameState.players.length) {
         gameState.currentTurn = 0;
       }
+      ensureValidTurn();
       checkRemainingPlayers();
     }
     io.emit('gameState', gameState);
