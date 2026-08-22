@@ -190,16 +190,44 @@ io.on('connection', (socket) => {
     io.emit('gameState', gameState);
   });
 
+  socket.on('adminAction', ({ type, targetId, payload }) => {
+    const pIdx = gameState.players.findIndex(p => p.id === socket.id);
+    if (pIdx === -1 || !gameState.players[pIdx].isAdmin) return;
+
+    if (type === 'reset') {
+      startNewGame();
+    } else if (type === 'kick') {
+      const kIdx = gameState.players.findIndex(p => p.id === targetId);
+      if (kIdx !== -1) {
+        gameState.players.splice(kIdx, 1);
+        if (gameState.players.length < 2) {
+          gameState.gameStarted = false;
+        } else {
+          ensureValidTurn();
+          checkRemainingPlayers();
+        }
+      }
+    } else if (type === 'addChips') {
+      const target = gameState.players.find(p => p.id === targetId);
+      if (target) {
+        target.chips += (parseInt(payload) || 500);
+      }
+    } else if (type === 'setBoot') {
+      const newBoot = parseInt(payload);
+      if (newBoot && newBoot > 0) {
+        gameState.bootAmount = newBoot;
+      }
+    } else if (type === 'forceShow') {
+      gameState.showAllCards = true;
+    }
+
+    io.emit('gameState', gameState);
+  });
+
   socket.on('playerAction', ({ action }) => {
     const playerIndex = gameState.players.findIndex(p => p.id === socket.id);
     if (playerIndex === -1) return;
     const player = gameState.players[playerIndex];
-
-    if (action === 'resetGame' && player.isAdmin) {
-      startNewGame();
-      io.emit('gameState', gameState);
-      return;
-    }
 
     if (!gameState.gameStarted) return;
 
