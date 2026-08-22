@@ -8,6 +8,7 @@ const passwordInput = document.getElementById('password-input');
 const usernameInput = document.getElementById('username-input');
 const loginSubmitBtn = document.getElementById('login-submit-btn');
 const loginModal = document.getElementById('login-modal');
+const errorMsg = document.getElementById('error-msg');
 
 tabPlayer.addEventListener('click', () => {
   currentRole = 'player';
@@ -15,6 +16,7 @@ tabPlayer.addEventListener('click', () => {
   tabAdmin.classList.remove('active');
   passwordInput.classList.add('hidden');
   loginSubmitBtn.textContent = 'JOIN TABLE';
+  errorMsg.textContent = '';
 });
 
 tabAdmin.addEventListener('click', () => {
@@ -23,21 +25,29 @@ tabAdmin.addEventListener('click', () => {
   tabPlayer.classList.remove('active');
   passwordInput.classList.remove('hidden');
   loginSubmitBtn.textContent = 'ADMIN LOGIN';
+  errorMsg.textContent = '';
 });
 
 loginSubmitBtn.addEventListener('click', (e) => {
   e.preventDefault();
   const name = usernameInput.value.trim() || (currentRole === 'admin' ? 'Admin' : 'Player');
-  
-  socket.emit('joinGame', { name: name, role: currentRole });
+  const password = passwordInput.value.trim();
+
+  socket.emit('joinGame', { name, role: currentRole, password });
+});
+
+socket.on('authError', (msg) => {
+  errorMsg.textContent = msg;
+});
+
+socket.on('joinedSuccess', () => {
   loginModal.style.display = 'none';
 });
 
-// Render gameState
 socket.on('gameState', (state) => {
   const potStatus = document.getElementById('pot-status');
   const potAmount = document.getElementById('pot-amount');
-  
+
   if (state.lastWinner) {
     potStatus.textContent = state.lastWinner;
     potAmount.textContent = '';
@@ -57,8 +67,8 @@ socket.on('gameState', (state) => {
     seat.className = 'player-seat-node';
 
     const isMe = p.id === socket.id;
+    const isCurrentTurn = state.gameStarted && state.currentTurn === idx;
 
-    // Position seats around table
     if (isMe) {
       seat.style.bottom = '16%';
       seat.style.left = '50%';
@@ -77,8 +87,9 @@ socket.on('gameState', (state) => {
     if (p.cards && p.cards.length > 0) {
       cardsHTML = p.cards.map(c => {
         const isRed = c.suit === '♥' || c.suit === '♦';
-        const showCard = p.seeCards || isMe;
-        if (showCard) {
+        const canSeeThisCard = (isMe && p.seeCards) || state.showAllCards;
+
+        if (canSeeThisCard) {
           return `<div class="card-item ${isRed ? 'red' : ''}">${c.value}${c.suit}</div>`;
         } else {
           return `<div class="card-item back">🂠</div>`;
@@ -87,7 +98,7 @@ socket.on('gameState', (state) => {
     }
 
     seat.innerHTML = `
-      <div class="seat-box ${isMe ? 'me' : ''}">
+      <div class="seat-box ${isMe ? 'me' : ''} ${isCurrentTurn ? 'active-turn' : ''}">
         <div class="player-avatar">${p.avatar || '👤'} <span class="player-name">${p.name} ${isMe ? '(You)' : ''}</span></div>
         <div class="player-chips">₹${p.chips}</div>
         <div class="player-status">${p.status}</div>
@@ -99,7 +110,6 @@ socket.on('gameState', (state) => {
   });
 });
 
-// Bottom bar clicks
 document.querySelectorAll('.bottom-action-bar .btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const action = btn.getAttribute('data-action');

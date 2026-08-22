@@ -17,10 +17,9 @@ body {
   align-items: center;
 }
 
-/* Outer Table Felt */
 .poker-table {
   width: 86vw;
-  height: 60vh;
+  height: 58vh;
   max-width: 420px;
   max-height: 520px;
   background: radial-gradient(circle, #15803d 0%, #166534 60%, #064e3b 100%);
@@ -42,7 +41,7 @@ body {
   color: #fff;
   text-align: center;
   font-weight: bold;
-  font-size: 14px;
+  font-size: 13px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
@@ -51,14 +50,13 @@ body {
   font-size: 18px;
 }
 
-/* Modal Overlay */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.88);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -125,6 +123,13 @@ body {
   display: none;
 }
 
+.error-text {
+  color: #ef4444;
+  font-size: 12px;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
 .action-submit-btn {
   width: 100%;
   background: #2563eb;
@@ -137,7 +142,6 @@ body {
   cursor: pointer;
 }
 
-/* Seats Overlay */
 #seats-container {
   position: fixed;
   top: 0;
@@ -161,12 +165,17 @@ body {
   padding: 6px 10px;
   color: #fff;
   text-align: center;
-  min-width: 100px;
+  min-width: 105px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
 .seat-box.me {
   border-color: #22c55e;
+}
+
+.seat-box.active-turn {
+  box-shadow: 0 0 15px #f59e0b;
+  border-color: #f59e0b;
 }
 
 .player-avatar {
@@ -219,7 +228,6 @@ body {
   color: #fff;
 }
 
-/* Bottom Actions */
 .bottom-action-bar {
   position: fixed;
   bottom: 12px;
@@ -241,13 +249,12 @@ body {
   font-size: 11px;
   text-align: center;
   cursor: pointer;
-  min-width: 55px;
+  min-width: 60px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.4);
 }
 
 .btn-pack { background: #ef4444; }
 .btn-blind { background: #0284c7; }
 .btn-see { background: #3b82f6; }
-.btn-side { background: #8b5cf6; }
 .btn-chaal { background: #16a34a; }
 .btn-show { background: #ea580c; }

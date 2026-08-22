@@ -9,7 +9,7 @@
 </head>
 <body>
 
-  <!-- Game Felt Table -->
+  <!-- Game Table Felt -->
   <div class="poker-table">
     <div class="pot-badge" id="pot-display">
       <span id="pot-status">Waiting...</span><br>
@@ -17,7 +17,7 @@
     </div>
   </div>
 
-  <!-- Dynamic Player Seats Container -->
+  <!-- Dynamic Seats Area -->
   <div id="seats-container"></div>
 
   <!-- Login Modal Overlay -->
@@ -31,18 +31,19 @@
       </div>
 
       <input type="text" id="username-input" class="input-field" placeholder="Enter Name" autocomplete="off">
-      <input type="password" id="password-input" class="input-field hidden" placeholder="Password">
+      <input type="password" id="password-input" class="input-field hidden" placeholder="Admin Password (admin)">
+
+      <div id="error-msg" class="error-text"></div>
 
       <button class="action-submit-btn" id="login-submit-btn">JOIN TABLE</button>
     </div>
   </div>
 
-  <!-- Bottom Action Bar -->
+  <!-- Bottom Action Controls -->
   <div class="bottom-action-bar">
     <button class="btn btn-pack" data-action="pack">PACK</button>
     <button class="btn btn-blind" data-action="blind">BLIND<br><small>(₹10)</small></button>
     <button class="btn btn-see" data-action="see">SEE CARDS</button>
-    <button class="btn btn-side" data-action="sideshow">SIDE SHOW</button>
     <button class="btn btn-chaal" data-action="chaal">CHAAL<br><small>(₹20)</small></button>
     <button class="btn btn-show" data-action="show">SHOW<br><small>(₹20)</small></button>
   </div>

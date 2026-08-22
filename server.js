@@ -8,18 +8,21 @@ const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static('public'));
 
+const ADMIN_PASSWORD = 'admin';
+
 let gameState = {
   pot: 0,
   players: [],
   currentTurn: 0,
   gameStarted: false,
   bootAmount: 2,
-  lastWinner: ''
+  lastWinner: '',
+  showAllCards: false
 };
 
 const suits = ['♠', '♥', '♦', '♣'];
 const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-const avatars = ['👑', '🤠', '😎', '🦊', '🦁', '🤖', '👑', '🃏'];
+const avatars = ['👑', '🤠', '😎', '🦊', '🦁', '🤖', '🃏'];
 
 function createDeck() {
   let deck = [];
@@ -42,6 +45,8 @@ function startNewGame() {
   gameState.pot = activePlayers.length * gameState.bootAmount;
   gameState.gameStarted = true;
   gameState.currentTurn = 0;
+  gameState.showAllCards = false;
+  gameState.lastWinner = '';
 
   gameState.players.forEach(p => {
     if (p.chips >= gameState.bootAmount) {
@@ -56,45 +61,73 @@ function startNewGame() {
   });
 }
 
+function nextTurn() {
+  if (gameState.players.length === 0) return;
+  let count = 0;
+  do {
+    gameState.currentTurn = (gameState.currentTurn + 1) % gameState.players.length;
+    count++;
+  } while (
+    (gameState.players[gameState.currentTurn].status === 'PACKED' ||
+     gameState.players[gameState.currentTurn].status === 'OUT') &&
+    count < gameState.players.length
+  );
+}
+
 function checkRemainingPlayers() {
   const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT');
   if (active.length === 1) {
     const winner = active[0];
     winner.chips += gameState.pot;
     gameState.lastWinner = winner.name + ' won ₹' + gameState.pot;
+    gameState.showAllCards = true;
     gameState.gameStarted = false;
     setTimeout(() => {
       startNewGame();
       io.emit('gameState', gameState);
-    }, 3000);
+    }, 4000);
   }
 }
 
 io.on('connection', (socket) => {
   socket.emit('gameState', gameState);
 
-  socket.on('joinGame', ({ name, role }) => {
-    const existing = gameState.players.find(p => p.id === socket.id);
-    if (!existing) {
-      const isAdmin = role === 'admin' || gameState.players.length === 0;
-      const avatar = isAdmin ? '👑' : avatars[gameState.players.length % avatars.length];
+  socket.on('joinGame', ({ name, role, password }) => {
+    let isAdmin = false;
+    if (role === 'admin') {
+      if (password === ADMIN_PASSWORD) {
+        isAdmin = true;
+      } else {
+        socket.emit('authError', 'Invalid Admin Password!');
+        return;
+      }
+    }
 
-      gameState.players.push({
-        id: socket.id,
-        name: name || (isAdmin ? 'Admin' : 'Player ' + (gameState.players.length + 1)),
-        chips: 1000,
-        status: 'BLIND',
-        cards: [],
-        seeCards: false,
-        isAdmin: isAdmin,
-        avatar: avatar
-      });
+    const existingIndex = gameState.players.findIndex(p => p.id === socket.id);
+    const avatar = isAdmin ? '👑' : avatars[gameState.players.length % avatars.length];
+
+    const playerObj = {
+      id: socket.id,
+      name: name || (isAdmin ? 'Admin' : 'Player ' + (gameState.players.length + 1)),
+      chips: 1000,
+      status: 'BLIND',
+      cards: [],
+      seeCards: false,
+      isAdmin: isAdmin,
+      avatar: avatar
+    };
+
+    if (existingIndex !== -1) {
+      gameState.players[existingIndex] = playerObj;
+    } else {
+      gameState.players.push(playerObj);
     }
 
     if (!gameState.gameStarted && gameState.players.length >= 1) {
       startNewGame();
     }
 
+    socket.emit('joinedSuccess', { isAdmin });
     io.emit('gameState', gameState);
   });
 
@@ -108,18 +141,21 @@ io.on('connection', (socket) => {
       player.status = 'SEEN';
     } else if (action === 'pack') {
       player.status = 'PACKED';
+      nextTurn();
       checkRemainingPlayers();
     } else if (action === 'blind') {
       const amt = 10;
       if (player.chips >= amt) {
         player.chips -= amt;
         gameState.pot += amt;
+        nextTurn();
       }
     } else if (action === 'chaal') {
       const amt = player.status === 'BLIND' ? 10 : 20;
       if (player.chips >= amt) {
         player.chips -= amt;
         gameState.pot += amt;
+        nextTurn();
       }
     } else if (action === 'show') {
       const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT');
@@ -127,12 +163,15 @@ io.on('connection', (socket) => {
         const winner = active[Math.floor(Math.random() * active.length)];
         winner.chips += gameState.pot;
         gameState.lastWinner = winner.name + ' won Show (₹' + gameState.pot + ')';
+        gameState.showAllCards = true;
         gameState.gameStarted = false;
         setTimeout(() => {
           startNewGame();
           io.emit('gameState', gameState);
-        }, 3000);
+        }, 4000);
       }
+    } else if (action === 'resetGame' && player.isAdmin) {
+      startNewGame();
     }
 
     io.emit('gameState', gameState);
