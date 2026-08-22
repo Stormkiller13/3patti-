@@ -16,7 +16,6 @@
     
     #gameScreen { display: none; width: 100vw; height: 100vh; position: relative; flex-direction: column; align-items: center; justify-content: space-between; padding-bottom: 70px; }
     
-    /* Top Bar for Admin Button */
     .top-bar { position: absolute; top: 10px; right: 15px; z-index: 200; }
     .admin-btn-toggle { display: none; background: #8e44ad; color: #fff; border: 1px solid #9b59b6; border-radius: 20px; padding: 6px 14px; font-weight: bold; font-size: 12px; cursor: pointer; box-shadow: 0 0 10px rgba(142,68,173,0.5); }
 
@@ -48,7 +47,6 @@
 
     .see-cards-btn { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #2980b9; color: #fff; border: none; border-radius: 4px; font-weight: bold; font-size: 9px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.4); z-index: 25; }
     
-    /* Action Controls Bar */
     .controls-bar { position: fixed; bottom: 0; left: 0; width: 100vw; height: 60px; background: #121721; border-top: 1px solid #2a3241; display: flex; justify-content: center; align-items: center; gap: 10px; z-index: 500; padding: 0 10px; }
     .action-btn { flex: 1; max-width: 110px; height: 42px; border-radius: 20px; border: none; font-weight: bold; font-size: 12px; cursor: pointer; color: #fff; box-shadow: 0 3px 6px rgba(0,0,0,0.4); transition: transform 0.1s; }
     .action-btn:active { transform: scale(0.94); }
@@ -57,22 +55,20 @@
     .btn-chaal { background: #2ecc71; }
     .btn-show { background: #e67e22; }
 
-    /* Admin Modal */
-    #adminModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 900; justify-content: center; align-items: center; }
+    /* Clean Admin Modal */
+    #adminModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 900; justify-content: center; align-items: center; }
     #adminModal.active { display: flex; }
-    .admin-modal-card { background: #161b22; border: 2px solid #8e44ad; border-radius: 12px; padding: 20px; width: 320px; text-align: center; box-shadow: 0 0 25px rgba(142,68,173,0.5); }
+    .admin-modal-card { background: #161b22; border: 2px solid #8e44ad; border-radius: 12px; padding: 20px; width: 310px; text-align: center; box-shadow: 0 0 25px rgba(142,68,173,0.5); }
     .admin-modal-card h3 { color: #f1c40f; margin-bottom: 15px; font-size: 18px; }
     .admin-group { margin-bottom: 12px; text-align: left; }
     .admin-group label { display: block; font-size: 11px; color: #bdc3c7; margin-bottom: 4px; }
-    .admin-group select, .admin-group input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #fff; font-size: 12px; }
+    .admin-group select, .admin-group input { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #fff; font-size: 13px; }
     .admin-row-btns { display: flex; gap: 8px; margin-top: 10px; }
     .admin-row-btns button { flex: 1; padding: 10px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; font-size: 12px; color: #fff; }
-    .btn-adm-reset { background: #e67e22; }
-    .btn-adm-kick { background: #c0392b; }
     .btn-adm-chips { background: #27ae60; }
-    .btn-adm-close { background: #7f8c8d; margin-top: 12px; width: 100%; padding: 8px; border-radius: 6px; border: none; color: #fff; font-weight: bold; cursor: pointer; }
+    .btn-adm-kick { background: #c0392b; }
+    .btn-adm-close { background: #7f8c8d; margin-top: 15px; width: 100%; padding: 8px; border-radius: 6px; border: none; color: #fff; font-weight: bold; cursor: pointer; }
 
-    /* Big Card Modal */
     #bigCardModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 1000; flex-direction: column; justify-content: center; align-items: center; }
     #bigCardModal.active { display: flex; }
     .big-modal-title { font-size: 20px; color: #f1c40f; margin-bottom: 15px; font-weight: bold; }
@@ -122,33 +118,29 @@
     </div>
   </div>
 
-  <!-- Admin Control Panel Modal -->
+  <!-- Dedicated Simplified Admin Panel -->
   <div id="adminModal">
     <div class="admin-modal-card">
       <h3>👑 ADMIN CONTROLS</h3>
       
       <div class="admin-group">
-        <label>Select Target Player</label>
+        <label>Select Player</label>
         <select id="adminPlayerSelect"></select>
       </div>
 
-      <div class="admin-row-btns">
-        <button class="btn-adm-kick" onclick="executeAdminAction('kick')">Kick Player</button>
-        <button class="btn-adm-chips" onclick="executeAdminAction('addChips')">+₹500 Chips</button>
-      </div>
-
-      <hr style="border: 0.5px solid #30363d; margin: 12px 0;">
-
       <div class="admin-group">
-        <label>Set Boot Amount (₹)</label>
-        <input type="number" id="bootAmountInput" value="10">
+        <label>Chip Amount</label>
+        <input type="number" id="chipAmountInput" placeholder="Enter chips count" value="1000">
       </div>
-      <button class="btn-adm-chips" style="width: 100%; margin-top: 4px;" onclick="executeAdminAction('setBoot')">Update Boot</button>
 
-      <div class="admin-row-btns" style="margin-top: 12px;">
-        <button class="btn-adm-reset" onclick="executeAdminAction('reset')">Reset Round</button>
-        <button class="btn-adm-reset" style="background: #2980b9;" onclick="executeAdminAction('forceShow')">Show Cards</button>
+      <div class="admin-row-btns">
+        <button class="btn-adm-chips" onclick="executeAdminAction('setChips')">Set Chips</button>
+        <button class="btn-adm-chips" style="background: #2980b9;" onclick="executeAdminAction('addChips')">+ Add Chips</button>
       </div>
+
+      <hr style="border: 0.5px solid #30363d; margin: 15px 0;">
+
+      <button class="btn-adm-kick" style="width: 100%;" onclick="executeAdminAction('kick')">🚫 Kick Player</button>
 
       <button class="btn-adm-close" onclick="toggleAdminPanel()">Close Panel</button>
     </div>
@@ -208,18 +200,14 @@
 
     function executeAdminAction(type) {
       const targetId = document.getElementById('adminPlayerSelect').value;
-      let payload = null;
+      const chipVal = document.getElementById('chipAmountInput').value;
 
-      if (type === 'setBoot') {
-        payload = document.getElementById('bootAmountInput').value;
-      } else if (type === 'addChips') {
-        payload = 500;
+      if (!targetId) {
+        alert('No player selected!');
+        return;
       }
 
-      socket.emit('adminAction', { type, targetId, payload });
-      if (type !== 'kick' && type !== 'addChips') {
-        toggleAdminPanel();
-      }
+      socket.emit('adminAction', { type, targetId, payload: chipVal });
     }
 
     function sendAction(action) {
@@ -259,13 +247,14 @@
         banner.classList.remove('active');
       }
 
-      // Populate Admin Player Selection List
       const playerSelect = document.getElementById('adminPlayerSelect');
+      const currentSelected = playerSelect.value;
       playerSelect.innerHTML = '';
       state.players.forEach(p => {
         const opt = document.createElement('option');
         opt.value = p.id;
         opt.innerText = p.name + ' (₹' + p.chips + ')';
+        if (p.id === currentSelected) opt.selected = true;
         playerSelect.appendChild(opt);
       });
 
