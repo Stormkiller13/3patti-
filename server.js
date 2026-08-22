@@ -5,422 +5,286 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const io = new Server(server, {
-  transports: ['websocket'],
-  pingInterval: 10000,
-  pingTimeout: 5000
-});
+const rooms = {};
 
-const ADMIN_CREDS = { username: 'Admin', password: '7204593508' };
-
-const SUITS = ['S', 'H', 'D', 'C'];
-const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
-const RANK_VALUES = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, 'T': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 };
-const HAND_NAMES = { 6: 'Trio / Trail', 5: 'Pure Sequence', 4: 'Sequence', 3: 'Color / Flush', 2: 'Pair', 1: 'High Card' };
-
-let gameState = {
-  pot: 0,
-  currentTurnId: null,
-  turnTimer: 30,
-  isExtraTime: false,
-  players: {},
-  adminId: null,
-  statusMessage: 'Waiting for at least 2 players...',
-  gameActive: false,
-  bootAmount: 10,
-  blindAmount: 10,
-  chaalAmount: 20,
-  showAmount: 20,
-  isShowPhase: false,
-  dealerId: null,
-  winnerId: null,
-  winningHandName: '',
-  sideshowPending: null,
-  lastBetSenderId: null
-};
-
-let timerInterval = null;
-
+// Helper: Card Deck & Evaluation
 function createDeck() {
-  let deck = [];
-  for (let s of SUITS) {
-    for (let r of RANKS) deck.push({ rank: r, suit: s });
+  const suits = ['♠', '♥', '♦', '♣'];
+  const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  const deck = [];
+  for (let s of suits) {
+    for (let v of values) {
+      deck.push({ suit: s, value: v, rank: values.indexOf(v) + 2 });
+    }
   }
   return deck.sort(() => Math.random() - 0.5);
 }
 
 function evaluateHand(cards) {
-  let vals = cards.map(c => RANK_VALUES[c.rank]).sort((a, b) => b - a);
-  let suits = cards.map(c => c.suit);
-  let isFlush = suits[0] === suits[1] && suits[1] === suits[2];
-  let isSeq = false;
+  const ranks = cards.map(c => c.rank).sort((a, b) => b - a);
+  const suits = cards.map(c => c.suit);
+  const isFlush = suits[0] === suits[1] && suits[1] === suits[2];
+  const isSequence = (ranks[0] - ranks[1] === 1 && ranks[1] - ranks[2] === 1) ||
+                     (ranks[0] === 14 && ranks[1] === 3 && ranks[2] === 2);
+  const isTrail = ranks[0] === ranks[1] && ranks[1] === ranks[2];
+  const isPair = ranks[0] === ranks[1] || ranks[1] === ranks[2] || ranks[0] === ranks[2];
 
-  if (vals[0] - vals[1] === 1 && vals[1] - vals[2] === 1) {
-    isSeq = true;
-  } else if (vals[0] === 14 && vals[1] === 3 && vals[2] === 2) {
-    isSeq = true;
-    vals = [3, 2, 1];
+  if (isTrail) return 6000000 + ranks[0];
+  if (isSequence && isFlush) return 5000000 + ranks[0];
+  if (isSequence) return 4000000 + ranks[0];
+  if (isFlush) return 3000000 + ranks[0] * 100 + ranks[1] * 10 + ranks[2];
+  if (isPair) {
+    const pairRank = ranks[0] === ranks[1] ? ranks[0] : ranks[1] === ranks[2] ? ranks[1] : ranks[2];
+    const kicker = ranks.find(r => r !== pairRank);
+    return 2000000 + pairRank * 10 + kicker;
   }
-
-  let score = 1;
-  if (vals[0] === vals[1] && vals[1] === vals[2]) score = 6;
-  else if (isSeq && isFlush) score = 5;
-  else if (isSeq) score = 4;
-  else if (isFlush) score = 3;
-  else if (vals[0] === vals[1] || vals[1] === vals[2] || vals[0] === vals[2]) {
-    let pairVal = (vals[0] === vals[1]) ? vals[0] : (vals[1] === vals[2] ? vals[1] : vals[0]);
-    let kicker = (vals[0] === vals[1]) ? vals[2] : (vals[1] === vals[2] ? vals[0] : vals[1]);
-    return { score: 2, vals: [pairVal, kicker], handName: HAND_NAMES[2] };
-  }
-
-  return { score, vals, handName: HAND_NAMES[score] };
+  return 1000000 + ranks[0] * 100 + ranks[1] * 10 + ranks[2];
 }
 
-function compareHands(handA, handB) {
-  if (handA.score !== handB.score) return handA.score - handB.score;
-  for (let i = 0; i < handA.vals.length; i++) {
-    if (handA.vals[i] !== handB.vals[i]) return handA.vals[i] - handB.vals[i];
-  }
-  return 0;
+function getActivePlayers(room) {
+  return room.players.filter(p => !p.isPacked && !p.disconnected);
 }
 
-function getActivePlayers() {
-  return Object.keys(gameState.players).filter(id => 
-    gameState.players[id].status !== 'PACKED' && 
-    gameState.players[id].status !== 'WAITING' && 
-    gameState.players[id].status !== 'AFK'
-  );
-}
-
-function getPreviousActiveSeenPlayer(currentTurnId) {
-  const activePlayers = getActivePlayers();
-  let idx = activePlayers.indexOf(currentTurnId);
-  if (idx <= 0) idx = activePlayers.length;
-  let prevId = activePlayers[idx - 1];
-  if (gameState.players[prevId] && gameState.players[prevId].seen) {
-    return prevId;
-  }
-  return null;
-}
-
-function startNewRound() {
-  const eligiblePlayerIds = Object.keys(gameState.players).filter(id => !gameState.players[id].isAfk);
-  if (eligiblePlayerIds.length < 2) {
-    clearInterval(timerInterval);
-    gameState.gameActive = false;
-    gameState.currentTurnId = null;
-    gameState.isShowPhase = false;
-    gameState.statusMessage = 'Waiting for at least 2 active players...';
-    gameState.winningHandName = '';
-    broadcastState();
+function advanceTurn(room) {
+  let active = getActivePlayers(room);
+  if (active.length <= 1) {
+    endGame(room, active[0]);
     return;
   }
-
-  let deck = createDeck();
-  gameState.pot = 0;
-  gameState.gameActive = true;
-  gameState.isShowPhase = false;
-  gameState.winningHandName = '';
-  gameState.sideshowPending = null;
-  gameState.statusMessage = 'Dealing cards...';
-
-  if (!gameState.dealerId || !gameState.players[gameState.dealerId] || gameState.players[gameState.dealerId].isAfk) {
-    gameState.dealerId = eligiblePlayerIds[0];
-    gameState.currentTurnId = eligiblePlayerIds[0];
-  } else {
-    let prevWinnerIndex = eligiblePlayerIds.indexOf(gameState.dealerId);
-    if (prevWinnerIndex === -1) {
-      gameState.currentTurnId = eligiblePlayerIds[0];
-    } else {
-      let nextStartIndex = (prevWinnerIndex + 1) % eligiblePlayerIds.length;
-      gameState.currentTurnId = eligiblePlayerIds[nextStartIndex];
-    }
-  }
-
-  eligiblePlayerIds.forEach(id => {
-    let p = gameState.players[id];
-    p.status = 'BLIND';
-    p.cards = [deck.pop(), deck.pop(), deck.pop()];
-    p.seen = false;
-    p.coins = Math.max(0, p.coins - gameState.bootAmount);
-    gameState.pot += gameState.bootAmount;
-  });
-
-  resetTimer();
-  broadcastState();
-
-  setTimeout(() => {
-    gameState.statusMessage = 'Round Started! Place Blind (₹10) or Chaal (₹20).';
-    broadcastState();
-  }, 2500);
+  do {
+    room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+  } while (room.players[room.currentTurnIndex].isPacked || room.players[room.currentTurnIndex].disconnected);
+  
+  broadcastState(room);
 }
 
-function resetTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-
-  const activePlayers = getActivePlayers();
-  if (activePlayers.length < 2) {
-    if (activePlayers.length === 1 && gameState.gameActive) {
-      declareWinner(activePlayers[0]);
-    }
-    return;
-  }
-
-  gameState.turnTimer = 30;
-  gameState.isExtraTime = false;
-
-  timerInterval = setInterval(() => {
-    if (!gameState.gameActive || !gameState.currentTurnId) {
-      clearInterval(timerInterval);
-      return;
-    }
-
-    gameState.turnTimer--;
-
-    if (gameState.turnTimer <= 0) {
-      if (!gameState.isExtraTime) {
-        gameState.isExtraTime = true;
-        gameState.turnTimer = 10;
-      } else {
-        clearInterval(timerInterval);
-        autoPackCurrentPlayer();
-        return;
-      }
-    }
-    io.emit('timerUpdate', { timer: gameState.turnTimer, isExtraTime: gameState.isExtraTime });
-  }, 1000);
-}
-
-function autoPackCurrentPlayer() {
-  const currentId = gameState.currentTurnId;
-  if (currentId && gameState.players[currentId]) {
-    const p = gameState.players[currentId];
-    p.status = 'PACKED';
-    p.consecutiveTimeouts = (p.consecutiveTimeouts || 0) + 1;
-    
-    if (p.consecutiveTimeouts >= 2) {
-      p.isAfk = true;
-      p.status = 'AFK';
-      gameState.statusMessage = `${p.name} marked AFK due to inactivity.`;
-    }
-
-    nextTurn();
-  }
-}
-
-function nextTurn() {
-  const activePlayers = getActivePlayers();
-  if (activePlayers.length <= 1) {
-    if (activePlayers.length === 1) declareWinner(activePlayers[0]);
-    return;
-  }
-  let currentIndex = activePlayers.indexOf(gameState.currentTurnId);
-  let nextIndex = (currentIndex + 1) % activePlayers.length;
-  gameState.currentTurnId = activePlayers[nextIndex];
-  resetTimer();
-  broadcastState();
-}
-
-function declareWinner(winnerId, isShow = false) {
-  if (timerInterval) clearInterval(timerInterval);
-
-  const winner = gameState.players[winnerId];
+function endGame(room, winner) {
+  room.gameStarted = false;
   if (winner) {
-    winner.coins += gameState.pot;
-    const handEval = evaluateHand(winner.cards);
-    gameState.winningHandName = handEval.handName;
-    gameState.statusMessage = `🏆 ${winner.name} Won ₹${gameState.pot}! (${gameState.winningHandName}) 🏆`;
-    gameState.dealerId = winnerId;
-    gameState.winnerId = winnerId;
+    winner.chips += room.pot;
+    room.lastWinner = winner.name;
   }
-
-  gameState.gameActive = false;
-  gameState.currentTurnId = null;
-  gameState.isShowPhase = isShow;
-
-  broadcastState(isShow);
-
-  const waitTime = isShow ? 5000 : 3500;
-  setTimeout(() => {
-    gameState.isShowPhase = false;
-    gameState.winnerId = null;
-    gameState.winningHandName = '';
-    startNewRound();
-  }, waitTime);
+  room.pot = 0;
+  broadcastState(room);
 }
 
-function sanitizeState(revealAllCards = false) {
-  let copy = JSON.parse(JSON.stringify(gameState));
-  for (let id in copy.players) {
-    if (!revealAllCards) {
-      copy.players[id].cards = [null, null, null];
-    }
-  }
-  return copy;
-}
-
-function broadcastState(revealAllCards = false) {
-  io.emit('stateUpdate', sanitizeState(revealAllCards));
+function broadcastState(room) {
+  io.to(room.id).emit('gameState', {
+    roomId: room.id,
+    adminId: room.adminId,
+    players: room.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      chips: p.chips,
+      isBlind: p.isBlind,
+      isPacked: p.isPacked,
+      blindCountAfterSeen: p.blindCountAfterSeen,
+      disconnected: p.disconnected,
+      cardCount: p.cards ? p.cards.length : 0
+    })),
+    currentTurnIndex: room.currentTurnIndex,
+    pot: room.pot,
+    currentBet: room.currentBet,
+    gameStarted: room.gameStarted,
+    lastWinner: room.lastWinner
+  });
 }
 
 io.on('connection', (socket) => {
-  broadcastState();
 
-  socket.on('joinAdmin', (data) => {
-    if (data.username === ADMIN_CREDS.username && data.password === ADMIN_CREDS.password) {
-      gameState.adminId = socket.id;
-      gameState.players[socket.id] = { id: socket.id, name: 'Admin', coins: 10000, status: 'WAITING', cards: [], consecutiveTimeouts: 0, isAfk: false };
-      socket.emit('adminAuthSuccess');
-      if (!gameState.gameActive) startNewRound();
-      broadcastState();
+  socket.on('joinRoom', ({ roomId, playerName, playerId }) => {
+    let room = rooms[roomId];
+    if (!room) {
+      room = {
+        id: roomId,
+        adminId: socket.id,
+        players: [],
+        currentTurnIndex: 0,
+        pot: 0,
+        currentBet: 2,
+        gameStarted: false,
+        deck: []
+      };
+      rooms[roomId] = room;
+    }
+
+    socket.join(roomId);
+    socket.roomId = roomId;
+
+    let existingPlayer = room.players.find(p => p.id === playerId);
+    if (existingPlayer) {
+      existingPlayer.socketId = socket.id;
+      existingPlayer.disconnected = false;
+      if (existingPlayer.disconnectTimer) clearTimeout(existingPlayer.disconnectTimer);
+      socket.emit('reconnected', { player: existingPlayer, cards: existingPlayer.cards });
     } else {
-      socket.emit('adminAuthFailed', 'Invalid Admin Credentials');
+      const newPlayer = {
+        id: playerId || socket.id,
+        socketId: socket.id,
+        name: playerName || `Player_${socket.id.substring(0, 4)}`,
+        chips: 1000,
+        cards: [],
+        isBlind: true,
+        isPacked: false,
+        blindCountAfterSeen: 0,
+        disconnected: false
+      };
+      room.players.push(newPlayer);
     }
-  });
 
-  socket.on('joinPlayer', (data) => {
-    if (!data.name) return;
-    gameState.players[socket.id] = { id: socket.id, name: data.name, coins: 1000, status: 'WAITING', cards: [], consecutiveTimeouts: 0, isAfk: false };
-    if (!gameState.gameActive) startNewRound();
-    broadcastState();
-  });
-
-  socket.on('rejoinAfk', () => {
-    const player = gameState.players[socket.id];
-    if (player) {
-      player.isAfk = false;
-      player.consecutiveTimeouts = 0;
-      player.status = 'WAITING';
-      gameState.statusMessage = `${player.name} returned to the game.`;
-      if (!gameState.gameActive) startNewRound();
-      broadcastState();
+    if (!room.adminId || !room.players.some(p => p.socketId === room.adminId)) {
+      room.adminId = socket.id;
     }
+
+    broadcastState(room);
   });
 
-  socket.on('playerAction', (data) => {
-    const player = gameState.players[socket.id];
-    if (!player) return;
+  socket.on('startGame', () => {
+    const room = rooms[socket.roomId];
+    if (!room || room.adminId !== socket.id) return;
 
-    if (data.action === 'SEE') {
-      player.seen = true;
-      player.status = 'SEEN';
-      socket.emit('yourCards', player.cards);
-      broadcastState();
+    room.deck = createDeck();
+    room.pot = 0;
+    room.currentBet = 2;
+    room.gameStarted = true;
+
+    room.players.forEach(p => {
+      if (!p.disconnected) {
+        p.cards = [room.deck.pop(), room.deck.pop(), room.deck.pop()];
+        p.isBlind = true;
+        p.isPacked = false;
+        p.blindCountAfterSeen = 0;
+        p.chips -= room.currentBet;
+        room.pot += room.currentBet;
+      }
+    });
+
+    room.currentTurnIndex = 0;
+    broadcastState(room);
+
+    room.players.forEach(p => {
+      io.to(p.socketId).emit('dealCards', { cards: p.cards });
+    });
+  });
+
+  socket.on('playerMove', ({ action }) => {
+    const room = rooms[socket.roomId];
+    if (!room || !room.gameStarted) return;
+
+    const player = room.players[room.currentTurnIndex];
+    if (player.socketId !== socket.id) return;
+
+    if (action === 'see') {
+      player.isBlind = false;
+      socket.emit('cardsRevealed', player.cards);
+      broadcastState(room);
       return;
     }
 
-    if (socket.id !== gameState.currentTurnId) return;
+    if (action === 'pack') {
+      player.isPacked = true;
+      advanceTurn(room);
+      return;
+    }
 
-    player.consecutiveTimeouts = 0;
+    const hasSeenPlayerOnTable = room.players.some(p => !p.isPacked && !p.disconnected && !p.isBlind);
 
-    if (data.action === 'BLIND') {
-      if (!player.seen && player.coins >= gameState.blindAmount) {
-        player.coins -= gameState.blindAmount;
-        gameState.pot += gameState.blindAmount;
-        io.emit('animateBet', { fromId: socket.id });
-        nextTurn();
-      }
-    } else if (data.action === 'CHAAL') {
-      if (player.coins >= gameState.chaalAmount) {
-        player.coins -= gameState.chaalAmount;
-        gameState.pot += gameState.chaalAmount;
-        io.emit('animateBet', { fromId: socket.id });
-        nextTurn();
-      }
-    } else if (data.action === 'PACK') {
-      player.status = 'PACKED';
-      nextTurn();
-    } else if (data.action === 'SHOW') {
-      const activePlayers = getActivePlayers();
-      if (activePlayers.length === 2 && player.coins >= gameState.showAmount) {
-        player.coins -= gameState.showAmount;
-        gameState.pot += gameState.showAmount;
-        io.emit('animateBet', { fromId: socket.id });
-        let p1 = gameState.players[activePlayers[0]];
-        let p2 = gameState.players[activePlayers[1]];
-        let eval1 = evaluateHand(p1.cards);
-        let eval2 = evaluateHand(p2.cards);
-        let res = compareHands(eval1, eval2);
-        let winnerId = res >= 0 ? p1.id : p2.id;
-        declareWinner(winnerId, true);
-      }
-    } else if (data.action === 'SIDESHOW_REQUEST') {
-      const prevTargetId = getPreviousActiveSeenPlayer(socket.id);
-      if (prevTargetId && player.seen && player.coins >= gameState.chaalAmount) {
-        player.coins -= gameState.chaalAmount;
-        gameState.pot += gameState.chaalAmount;
-        io.emit('animateBet', { fromId: socket.id });
-        gameState.sideshowPending = { requesterId: socket.id, targetId: prevTargetId };
-        io.to(prevTargetId).emit('sideshowIncoming', { requesterName: player.name, requesterId: socket.id });
-        gameState.statusMessage = `${player.name} requested Side Show with ${gameState.players[prevTargetId].name}...`;
-        broadcastState();
+    if (player.isBlind) {
+      if (hasSeenPlayerOnTable) {
+        player.blindCountAfterSeen += 1;
+        if (player.blindCountAfterSeen >= 3) {
+          player.isBlind = false;
+          socket.emit('cardsRevealed', player.cards);
+          socket.emit('message', '3 Blind rounds limit reached. You are now playing SEEN.');
+        }
       }
     }
+
+    let betAmount = player.isBlind ? room.currentBet : room.currentBet * 2;
+    player.chips -= betAmount;
+    room.pot += betAmount;
+
+    advanceTurn(room);
   });
 
-  socket.on('sideshowResponse', (data) => {
-    if (!gameState.sideshowPending || gameState.sideshowPending.targetId !== socket.id) return;
-    
-    const requester = gameState.players[gameState.sideshowPending.requesterId];
-    const target = gameState.players[socket.id];
+  socket.on('sideshow', () => {
+    const room = rooms[socket.roomId];
+    if (!room || !room.gameStarted) return;
 
-    if (data.accept && requester && target) {
-      let eval1 = evaluateHand(requester.cards);
-      let eval2 = evaluateHand(target.cards);
-      let res = compareHands(eval1, eval2);
+    const player = room.players[room.currentTurnIndex];
+    if (player.socketId !== socket.id) return;
 
-      let loser = (res < 0) ? requester : target;
-      loser.status = 'PACKED';
-      gameState.statusMessage = `Side Show: ${loser.name} lost and packed!`;
-      gameState.sideshowPending = null;
-      nextTurn();
+    const isAnyPlayerBlind = room.players.some(p => !p.isPacked && !p.disconnected && p.isBlind);
+    if (isAnyPlayerBlind) {
+      return socket.emit('errorMsg', 'Sideshow unavailable: All active players on table must be SEEN.');
+    }
+
+    let prevIndex = (room.currentTurnIndex - 1 + room.players.length) % room.players.length;
+    while (room.players[prevIndex].isPacked || room.players[prevIndex].disconnected) {
+      prevIndex = (prevIndex - 1 + room.players.length) % room.players.length;
+    }
+    const targetPlayer = room.players[prevIndex];
+
+    const val1 = evaluateHand(player.cards);
+    const val2 = evaluateHand(targetPlayer.cards);
+
+    if (val1 > val2) {
+      targetPlayer.isPacked = true;
+      io.to(room.id).emit('message', `${player.name} won sideshow against ${targetPlayer.name}.`);
     } else {
-      gameState.statusMessage = `Side Show denied by ${target ? target.name : 'Player'}. Play continues.`;
-      gameState.sideshowPending = null;
-      broadcastState();
+      player.isPacked = true;
+      io.to(room.id).emit('message', `${targetPlayer.name} won sideshow against ${player.name}.`);
     }
+
+    advanceTurn(room);
   });
 
-  socket.on('adminManageCoins', (data) => {
-    if (socket.id !== gameState.adminId) return;
-    const { targetSocketId, actionType, amount } = data;
-    const player = gameState.players[targetSocketId];
-    const val = parseInt(amount, 10);
+  socket.on('kickPlayer', (targetPlayerId) => {
+    const room = rooms[socket.roomId];
+    if (!room || room.adminId !== socket.id) return;
 
-    if (player && !isNaN(val)) {
-      if (actionType === 'ADD') player.coins += val;
-      if (actionType === 'REMOVE') player.coins = Math.max(0, player.coins - val);
-      if (actionType === 'SET') player.coins = val;
-      broadcastState();
+    const targetIndex = room.players.findIndex(p => p.id === targetPlayerId);
+    if (targetIndex !== -1) {
+      const target = room.players[targetIndex];
+      io.to(target.socketId).emit('kicked', 'You were removed by the room admin.');
+      room.players.splice(targetIndex, 1);
+
+      if (room.gameStarted && room.currentTurnIndex === targetIndex) {
+        advanceTurn(room);
+      } else {
+        broadcastState(room);
+      }
     }
   });
 
   socket.on('disconnect', () => {
-    if (socket.id === gameState.adminId) gameState.adminId = null;
+    const room = rooms[socket.roomId];
+    if (!room) return;
 
-    const wasCurrentTurn = (socket.id === gameState.currentTurnId);
-    delete gameState.players[socket.id];
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (player) {
+      player.disconnected = true;
+      broadcastState(room);
 
-    const activePlayers = getActivePlayers();
-    if (activePlayers.length <= 1) {
-      if (activePlayers.length === 1 && gameState.gameActive) {
-        declareWinner(activePlayers[0]);
-      } else {
-        gameState.gameActive = false;
-        gameState.currentTurnId = null;
-        if (timerInterval) clearInterval(timerInterval);
-        gameState.statusMessage = 'Waiting for at least 2 players...';
-        broadcastState();
-      }
-    } else if (wasCurrentTurn) {
-      nextTurn();
-    } else {
-      broadcastState();
+      player.disconnectTimer = setTimeout(() => {
+        const index = room.players.indexOf(player);
+        if (index !== -1 && player.disconnected) {
+          room.players.splice(index, 1);
+          if (room.players.length === 0) {
+            delete rooms[room.id];
+          } else {
+            if (room.adminId === socket.id) room.adminId = room.players[0].socketId;
+            broadcastState(room);
+          }
+        }
+      }, 60000);
     }
   });
 });
 
-server.listen(3000, '0.0.0.0', () => console.log('3 Patti Server running on port 3000'));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
