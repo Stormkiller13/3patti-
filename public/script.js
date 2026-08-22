@@ -55,12 +55,14 @@ socket.on('gameState', (state) => {
     potStatus.textContent = 'POT';
     potAmount.textContent = '₹' + state.pot;
   } else {
-    potStatus.textContent = 'Waiting...';
+    potStatus.textContent = 'Waiting for players...';
     potAmount.textContent = '₹' + state.pot;
   }
 
   const seatsContainer = document.getElementById('seats-container');
   seatsContainer.innerHTML = '';
+
+  const totalPlayers = state.players.length;
 
   state.players.forEach((p, idx) => {
     const seat = document.createElement('div');
@@ -69,19 +71,14 @@ socket.on('gameState', (state) => {
     const isMe = p.id === socket.id;
     const isCurrentTurn = state.gameStarted && state.currentTurn === idx;
 
-    if (isMe) {
-      seat.style.bottom = '16%';
-      seat.style.left = '50%';
-    } else if (idx === 0) {
-      seat.style.top = '22%';
-      seat.style.left = '50%';
-    } else if (idx === 1) {
-      seat.style.top = '48%';
-      seat.style.left = '16%';
-    } else {
-      seat.style.top = '48%';
-      seat.style.left = '84%';
-    }
+    const angle = (idx / totalPlayers) * (2 * Math.PI) + (Math.PI / 2);
+    const rx = 38;
+    const ry = 32;
+    const leftPos = 50 + rx * Math.cos(angle);
+    const topPos = 50 + ry * Math.sin(angle);
+
+    seat.style.left = leftPos + '%';
+    seat.style.top = topPos + '%';
 
     let cardsHTML = '';
     if (p.cards && p.cards.length > 0) {

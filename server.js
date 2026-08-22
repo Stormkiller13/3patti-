@@ -36,7 +36,7 @@ function createDeck() {
 
 function startNewGame() {
   const activePlayers = gameState.players.filter(p => p.chips >= gameState.bootAmount);
-  if (activePlayers.length < 1) {
+  if (activePlayers.length < 2) {
     gameState.gameStarted = false;
     return;
   }
@@ -76,10 +76,12 @@ function nextTurn() {
 
 function checkRemainingPlayers() {
   const active = gameState.players.filter(p => p.status !== 'PACKED' && p.status !== 'OUT');
-  if (active.length === 1) {
-    const winner = active[0];
-    winner.chips += gameState.pot;
-    gameState.lastWinner = winner.name + ' won ₹' + gameState.pot;
+  if (active.length <= 1 && gameState.gameStarted) {
+    const winner = active[0] || gameState.players[0];
+    if (winner) {
+      winner.chips += gameState.pot;
+      gameState.lastWinner = winner.name + ' won ₹' + gameState.pot;
+    }
     gameState.showAllCards = true;
     gameState.gameStarted = false;
     setTimeout(() => {
@@ -123,7 +125,7 @@ io.on('connection', (socket) => {
       gameState.players.push(playerObj);
     }
 
-    if (!gameState.gameStarted && gameState.players.length >= 1) {
+    if (!gameState.gameStarted && gameState.players.length >= 2) {
       startNewGame();
     }
 
@@ -139,7 +141,15 @@ io.on('connection', (socket) => {
     if (action === 'see') {
       player.seeCards = true;
       player.status = 'SEEN';
-    } else if (action === 'pack') {
+      io.emit('gameState', gameState);
+      return;
+    }
+
+    if (gameState.gameStarted && gameState.currentTurn !== playerIndex && !player.isAdmin) {
+      return;
+    }
+
+    if (action === 'pack') {
       player.status = 'PACKED';
       nextTurn();
       checkRemainingPlayers();
@@ -179,10 +189,13 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     gameState.players = gameState.players.filter(p => p.id !== socket.id);
-    if (gameState.players.length === 0) {
+    if (gameState.players.length < 2) {
       gameState.gameStarted = false;
-      gameState.pot = 0;
+      gameState.currentTurn = 0;
     } else {
+      if (gameState.currentTurn >= gameState.players.length) {
+        gameState.currentTurn = 0;
+      }
       checkRemainingPlayers();
     }
     io.emit('gameState', gameState);
