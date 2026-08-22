@@ -1,0 +1,253 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+}
+
+body {
+  background-color: #080a10;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Outer Table Felt */
+.poker-table {
+  width: 86vw;
+  height: 60vh;
+  max-width: 420px;
+  max-height: 520px;
+  background: radial-gradient(circle, #15803d 0%, #166534 60%, #064e3b 100%);
+  border: 12px solid #b45309;
+  outline: 3px solid #f59e0b;
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 0 50px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,0,0,0.6);
+}
+
+.pot-badge {
+  background: rgba(15, 23, 42, 0.95);
+  border: 2px solid #f59e0b;
+  border-radius: 20px;
+  padding: 8px 18px;
+  color: #fff;
+  text-align: center;
+  font-weight: bold;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+#pot-amount {
+  color: #f59e0b;
+  font-size: 18px;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-card {
+  background: #111827;
+  border: 2px solid #f59e0b;
+  border-radius: 16px;
+  padding: 24px;
+  width: 85vw;
+  max-width: 340px;
+  text-align: center;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.7);
+}
+
+.title {
+  color: #f59e0b;
+  font-size: 20px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+
+.tab-group {
+  display: flex;
+  background: #1f2937;
+  border-radius: 8px;
+  padding: 3px;
+  margin-bottom: 16px;
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  padding: 8px 0;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #f59e0b;
+  color: #000;
+}
+
+.input-field {
+  width: 100%;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 12px;
+  color: #fff;
+  margin-bottom: 12px;
+  outline: none;
+  text-align: center;
+  font-size: 15px;
+}
+
+.input-field.hidden {
+  display: none;
+}
+
+.action-submit-btn {
+  width: 100%;
+  background: #2563eb;
+  border: none;
+  color: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* Seats Overlay */
+#seats-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.player-seat-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.seat-box {
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #3b82f6;
+  border-radius: 12px;
+  padding: 6px 10px;
+  color: #fff;
+  text-align: center;
+  min-width: 100px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.seat-box.me {
+  border-color: #22c55e;
+}
+
+.player-avatar {
+  font-size: 18px;
+}
+
+.player-name {
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.player-chips {
+  color: #facc15;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.player-status {
+  color: #4ade80;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.card-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+  gap: 2px;
+}
+
+.card-item {
+  width: 26px;
+  height: 36px;
+  background: #ffffff;
+  color: #000;
+  border: 1px solid #93c5fd;
+  border-radius: 4px;
+  line-height: 36px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 11px;
+}
+
+.card-item.red {
+  color: #dc2626;
+}
+
+.card-item.back {
+  background: #1e40af;
+  color: #fff;
+}
+
+/* Bottom Actions */
+.bottom-action-bar {
+  position: fixed;
+  bottom: 12px;
+  left: 0;
+  width: 100vw;
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+  padding: 0 8px;
+  z-index: 20;
+}
+
+.btn {
+  border: none;
+  color: #fff;
+  font-weight: bold;
+  border-radius: 20px;
+  padding: 10px 12px;
+  font-size: 11px;
+  text-align: center;
+  cursor: pointer;
+  min-width: 55px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+}
+
+.btn-pack { background: #ef4444; }
+.btn-blind { background: #0284c7; }
+.btn-see { background: #3b82f6; }
+.btn-side { background: #8b5cf6; }
+.btn-chaal { background: #16a34a; }
+.btn-show { background: #ea580c; }
