@@ -38,28 +38,38 @@ function createDeck() {
 }
 
 function evaluateHand(cards) {
-  if (!cards || cards.length !== 3) return 0;
+  if (!cards || cards.length !== 3) return { score: 0, desc: '' };
   
   let vals = cards.map(c => valueRank[c.value]).sort((a, b) => a - b);
   let v1 = vals[0], v2 = vals[1], v3 = vals[2];
-  let isFlush = cards[0].suit === cards[1].suit && cards[1].suit === cards[2].suit;
+  let valToName = { 14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: '10', 9: '9', 8: '8', 7: '7', 6: '6', 5: '5', 4: '4', 3: '3', 2: '2' };
   
+  let isFlush = cards[0].suit === cards[1].suit && cards[1].suit === cards[2].suit;
   let isSeq = (v1 + 1 === v2 && v2 + 1 === v3) || (v1 === 2 && v2 === 3 && v3 === 14);
   let isTrail = (v1 === v2 && v2 === v3);
   let isPair = (v1 === v2 || v2 === v3 || v1 === v3);
 
   let seqScore = (v1 === 2 && v3 === 14) ? 13.5 : v3;
 
-  if (isTrail) return 6000000 + v1;
-  if (isFlush && isSeq) return 5000000 + seqScore;
-  if (isSeq) return 4000000 + seqScore;
-  if (isFlush) return 3000000 + v3 * 400 + v2 * 20 + v1;
+  if (isTrail) {
+    return { score: 6000000 + v1, desc: 'Trail of ' + valToName[v1] + 's' };
+  }
+  if (isFlush && isSeq) {
+    let seqStr = (v1 === 2 && v3 === 14) ? 'A-2-3' : valToName[v1] + '-' + valToName[v2] + '-' + valToName[v3];
+    return { score: 5000000 + seqScore, desc: 'Pure Sequence (' + seqStr + ')' };
+  }
+  if (isSeq) {
+    let seqStr = (v1 === 2 && v3 === 14) ? 'A-2-3' : valToName[v1] + '-' + valToName[v2] + '-' + valToName[v3];
+    return { score: 4000000 + seqScore, desc: 'Sequence (' + seqStr + ')' };
+  }
+  if (isFlush) {
+    return { score: 3000000 + v3 * 400 + v2 * 20 + v1, desc: 'Color (' + valToName[v3] + ' High)' };
+  }
   if (isPair) {
     let pairVal = (v1 === v2) ? v1 : ((v2 === v3) ? v2 : v1);
-    let kicker = (v1 === v2) ? v3 : ((v2 === v3) ? v1 : v2);
-    return 2000000 + pairVal * 100 + kicker;
+    return { score: 2000000 + pairVal * 100 + (v1 === v2 ? v3 : (v2 === v3 ? v1 : v2)), desc: 'Pair of ' + valToName[pairVal] + 's' };
   }
-  return 1000000 + v3 * 400 + v2 * 20 + v1;
+  return { score: 1000000 + v3 * 400 + v2 * 20 + v1, desc: 'High Card ' + valToName[v3] };
 }
 
 function ensureValidTurn() {
@@ -122,7 +132,7 @@ function checkRemainingPlayers() {
     const winner = active[0] || gameState.players[0];
     if (winner) {
       winner.chips += gameState.pot;
-      gameState.lastWinner = winner.name + ' won ₹' + gameState.pot;
+      gameState.lastWinner = winner.name + ' won ₹' + gameState.pot + ' (Others Packed)';
     }
     gameState.showAllCards = true;
     gameState.gameStarted = false;
@@ -140,10 +150,11 @@ io.on('connection', (socket) => {
   socket.on('joinGame', ({ name, role, password }) => {
     let isAdmin = false;
     if (role === 'admin') {
-      if (password === ADMIN_PASSWORD) {
+      const cleanPass = (password || '').trim().toLowerCase();
+      if (cleanPass === ADMIN_PASSWORD) {
         isAdmin = true;
       } else {
-        socket.emit('authError', 'Invalid Admin Password!');
+        socket.emit('authError', 'Incorrect Password! Admin password is "admin"');
         return;
       }
     }
@@ -238,17 +249,19 @@ io.on('connection', (socket) => {
 
         let bestScore = -1;
         let winner = active[0];
+        let winningHand = { desc: '' };
 
         active.forEach(p => {
-          let score = evaluateHand(p.cards);
-          if (score > bestScore) {
-            bestScore = score;
+          let hand = evaluateHand(p.cards);
+          if (hand.score > bestScore) {
+            bestScore = hand.score;
             winner = p;
+            winningHand = hand;
           }
         });
 
         winner.chips += gameState.pot;
-        gameState.lastWinner = winner.name + ' won Show (₹' + gameState.pot + ')';
+        gameState.lastWinner = winner.name + ' won ₹' + gameState.pot + ' with ' + winningHand.desc;
         gameState.showAllCards = true;
         gameState.gameStarted = false;
         if (resetTimer) clearTimeout(resetTimer);
