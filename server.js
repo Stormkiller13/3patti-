@@ -15,7 +15,7 @@ let gameState = {
   players: [],
   currentTurn: 0,
   gameStarted: false,
-  bootAmount: 5,
+  bootAmount: 10,
   lastWinner: '',
   showAllCards: false
 };
